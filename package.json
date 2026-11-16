@@ -1,0 +1,23 @@
+{
+  "name": "schema-forms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Render forms from a schema definition and call D365 F&O / external APIs on submit",
+  "scripts": {
+    "setup": "npm ci --prefix server && npm ci --prefix client",
+    "dev": "concurrently -k -n server,client -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "lint": "oxlint -c .oxlintrc.json --deny-warnings server/src server/test server/scripts client/src",
+    "typecheck": "npm run typecheck --prefix client",
+    "test": "npm test --prefix server",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "oxlint": "^1.90.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

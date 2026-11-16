@@ -1,0 +1,73 @@
+{
+  "name": "Create customer",
+  "description": "Creates an organization customer via OData entity CustomersV3.",
+  "icon": "customer",
+  "auth": {
+    "type": "oauth2_client_credentials",
+    "tokenUrl": "https://login.microsoftonline.com/{{env:FNO_TENANT_ID}}/oauth2/v2.0/token",
+    "clientId": "{{env:FNO_CLIENT_ID}}",
+    "clientSecret": "{{env:FNO_CLIENT_SECRET}}",
+    "scope": "{{env:FNO_BASE_URL}}/.default"
+  },
+  "api": {
+    "method": "POST",
+    "url": "{{env:FNO_BASE_URL}}/data/CustomersV3",
+    "bodyTemplate": {
+      "dataAreaId": "{{form.dataAreaId | lower}}",
+      "CustomerAccount": "{{form.CustomerAccount}}",
+      "OrganizationName": "{{form.OrganizationName}}",
+      "CustomerGroupId": "{{form.CustomerGroupId}}",
+      "SalesCurrencyCode": "{{form.SalesCurrencyCode}}",
+      "PartyType": "Organization"
+    },
+    "successMessage": "Customer {{response.CustomerAccount}} ({{response.OrganizationName}}) created."
+  },
+  "formSchema": {
+    "title": "Create Customer",
+    "type": "object",
+    "required": [
+      "dataAreaId",
+      "OrganizationName",
+      "CustomerGroupId",
+      "SalesCurrencyCode"
+    ],
+    "properties": {
+      "dataAreaId": {
+        "type": "string",
+        "title": "Company (legal entity)",
+        "default": "usmf"
+      },
+      "CustomerAccount": {
+        "type": "string",
+        "title": "Customer account"
+      },
+      "OrganizationName": {
+        "type": "string",
+        "title": "Name"
+      },
+      "CustomerGroupId": {
+        "type": "string",
+        "title": "Customer group"
+      },
+      "SalesCurrencyCode": {
+        "type": "string",
+        "title": "Currency",
+        "enum": [
+          "USD",
+          "INR",
+          "EUR"
+        ],
+        "default": "USD"
+      }
+    }
+  },
+  "uiSchema": {
+    "CustomerAccount": {
+      "ui:help": "Leave empty if the number sequence is automatic."
+    },
+    "CustomerGroupId": {
+      "ui:placeholder": "e.g. 10"
+    }
+  },
+  "category": "Accounts receivable"
+}

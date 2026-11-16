@@ -1,0 +1,38 @@
+{
+  "id": "fno-custom-service-template",
+  "name": "F&O – Custom Service (template)",
+  "description": "Template for an X++ custom service. Replace the service group / service / operation names and fields.",
+  "icon": "⚙️",
+  "auth": {
+    "type": "oauth2_client_credentials",
+    "tokenUrl": "https://login.microsoftonline.com/{{env:FNO_TENANT_ID}}/oauth2/v2.0/token",
+    "clientId": "{{env:FNO_CLIENT_ID}}",
+    "clientSecret": "{{env:FNO_CLIENT_SECRET}}",
+    "scope": "{{env:FNO_BASE_URL}}/.default"
+  },
+  "api": {
+    "method": "POST",
+    "url": "{{env:FNO_BASE_URL}}/api/services/MyServiceGroup/MyService/createSalesOrder",
+    "bodyTemplate": {
+      "_request": {
+        "CustAccount": "{{form.custAccount}}",
+        "ItemId": "{{form.itemId}}",
+        "Qty": "{{form.qty | number}}",
+        "DataAreaId": "{{form.company}}"
+      }
+    },
+    "successMessage": "Service call succeeded."
+  },
+  "formSchema": {
+    "title": "Custom service: create sales order",
+    "type": "object",
+    "required": ["company", "custAccount", "itemId", "qty"],
+    "properties": {
+      "company": { "type": "string", "title": "Company", "default": "usmf" },
+      "custAccount": { "type": "string", "title": "Customer account" },
+      "itemId": { "type": "string", "title": "Item number" },
+      "qty": { "type": "number", "title": "Quantity", "minimum": 1, "default": 1 }
+    }
+  },
+  "uiSchema": {}
+}

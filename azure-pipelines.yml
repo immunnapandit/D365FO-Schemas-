@@ -1,0 +1,102 @@
+# Azure DevOps pipeline: lint + test + build on every PR, build image + deploy to Azure Container Apps from main.
+#
+# One-time setup (Project settings -> Service connections):
+#   - "sf-acr"   : Docker Registry connection to your Azure Container Registry
+#   - "sf-azure" : Azure Resource Manager connection with Contributor on the resource group
+# Pipelines -> Environments: create "schema-forms-prod" and add an approval check.
+
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+
+variables:
+  nodeVersion: '22.x'
+  acrConnection: 'sf-acr'
+  azureConnection: 'sf-azure'
+  acrLoginServer: 'yourregistry.azurecr.io'   # change
+  imageRepository: 'schema-forms'
+  resourceGroup: 'rg-schema-forms'            # change
+  containerApp: 'schema-forms'                # change
+  imageTag: '$(Build.BuildId)'
+
+stages:
+  - stage: Verify
+    displayName: Lint, test, build
+    jobs:
+      - job: verify
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+          - script: npm ci --no-audit --no-fund
+            displayName: Install root tools
+          - script: npm run setup
+            displayName: Install server + client
+          - script: npm run lint
+            displayName: Lint
+          - script: npm run typecheck
+            displayName: Type check
+          - script: npm test
+            displayName: Tests
+          - script: npm audit --omit=dev --audit-level=high --prefix server && npm audit --omit=dev --audit-level=high --prefix client
+            displayName: Dependency audit
+          - script: npm run build
+            displayName: Build React app
+
+  - stage: Image
+    displayName: Build and push image
+    dependsOn: Verify
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: image
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: Docker@2
+            displayName: Build and push
+            inputs:
+              containerRegistry: $(acrConnection)
+              repository: $(imageRepository)
+              command: buildAndPush
+              Dockerfile: Dockerfile
+              buildContext: .
+              tags: |
+                $(imageTag)
+                latest
+
+  - stage: Deploy
+    displayName: Deploy to production
+    dependsOn: Image
+    condition: succeeded()
+    jobs:
+      - deployment: deploy
+        environment: schema-forms-prod
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: Update Container App image
+                  inputs:
+                    azureSubscription: $(azureConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -e
+                      az containerapp update \
+                        --name $(containerApp) \
+                        --resource-group $(resourceGroup) \
+                        --image $(acrLoginServer)/$(imageRepository):$(imageTag)
+                      FQDN=$(az containerapp show -n $(containerApp) -g $(resourceGroup) --query properties.configuration.ingress.fqdn -o tsv)
+                      for i in $(seq 1 30); do
+                        if curl -fsS "https://$FQDN/health/ready"; then echo; echo "Healthy"; exit 0; fi
+                        sleep 10
+                      done
+                      echo "New revision did not become healthy"; exit 1

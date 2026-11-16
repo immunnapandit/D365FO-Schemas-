@@ -1,0 +1,81 @@
+{
+  "name": "Create sales order",
+  "description": "Creates a sales order header via OData entity SalesOrderHeadersV2.",
+  "icon": "cart",
+  "auth": {
+    "type": "oauth2_client_credentials",
+    "tokenUrl": "https://login.microsoftonline.com/{{env:FNO_TENANT_ID}}/oauth2/v2.0/token",
+    "clientId": "{{env:FNO_CLIENT_ID}}",
+    "clientSecret": "{{env:FNO_CLIENT_SECRET}}",
+    "scope": "{{env:FNO_BASE_URL}}/.default"
+  },
+  "api": {
+    "method": "POST",
+    "url": "{{env:FNO_BASE_URL}}/data/SalesOrderHeadersV2",
+    "headers": {
+      "OData-Version": "4.0"
+    },
+    "bodyTemplate": {
+      "dataAreaId": "{{form.dataAreaId | lower}}",
+      "OrderingCustomerAccountNumber": "{{form.OrderingCustomerAccountNumber}}",
+      "CurrencyCode": "{{form.CurrencyCode}}",
+      "RequestedReceiptDate": "{{form.RequestedReceiptDate | datetime}}",
+      "CustomerRequisitionNumber": "{{form.CustomerRequisitionNumber}}",
+      "CustomersOrderReference": "{{form.CustomersOrderReference}}"
+    },
+    "successMessage": "Sales order {{response.SalesOrderNumber}} created in company {{response.dataAreaId}}."
+  },
+  "formSchema": {
+    "title": "Create Sales Order",
+    "type": "object",
+    "required": [
+      "dataAreaId",
+      "OrderingCustomerAccountNumber",
+      "CurrencyCode"
+    ],
+    "properties": {
+      "dataAreaId": {
+        "type": "string",
+        "title": "Company (legal entity)",
+        "default": "usmf"
+      },
+      "OrderingCustomerAccountNumber": {
+        "type": "string",
+        "title": "Customer account"
+      },
+      "CurrencyCode": {
+        "type": "string",
+        "title": "Currency",
+        "enum": [
+          "USD",
+          "INR",
+          "EUR",
+          "GBP"
+        ],
+        "default": "USD"
+      },
+      "RequestedReceiptDate": {
+        "type": "string",
+        "format": "date",
+        "title": "Requested receipt date"
+      },
+      "CustomerRequisitionNumber": {
+        "type": "string",
+        "title": "Customer requisition"
+      },
+      "CustomersOrderReference": {
+        "type": "string",
+        "title": "Customer reference"
+      }
+    }
+  },
+  "uiSchema": {
+    "OrderingCustomerAccountNumber": {
+      "ui:placeholder": "e.g. US-001"
+    },
+    "dataAreaId": {
+      "ui:help": "Legal entity code, e.g. usmf"
+    }
+  },
+  "category": "Sales and marketing"
+}

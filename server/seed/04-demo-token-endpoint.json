@@ -1,0 +1,33 @@
+{
+  "id": "demo-dummyjson-product",
+  "name": "Demo – Login + Create Product",
+  "description": "Public test API (dummyjson.com). Calls a login URL with username/password, takes the token, then calls the create API. Use it to check the app without F&O.",
+  "icon": "🧪",
+  "auth": {
+    "type": "token_endpoint",
+    "url": "https://dummyjson.com/auth/login",
+    "method": "POST",
+    "bodyType": "json",
+    "body": { "username": "emilys", "password": "emilyspass", "expiresInMins": 30 },
+    "tokenPath": "accessToken",
+    "headerName": "Authorization",
+    "prefix": "Bearer "
+  },
+  "api": {
+    "method": "POST",
+    "url": "https://dummyjson.com/products/add",
+    "successMessage": "Product #{{response.id}} \"{{response.title}}\" created."
+  },
+  "formSchema": {
+    "title": "Create Product",
+    "type": "object",
+    "required": ["title", "price"],
+    "properties": {
+      "title": { "type": "string", "title": "Product name" },
+      "price": { "type": "number", "title": "Price", "minimum": 0 },
+      "category": { "type": "string", "title": "Category", "enum": ["laptops", "smartphones", "groceries"] },
+      "inStock": { "type": "boolean", "title": "In stock", "default": true }
+    }
+  },
+  "uiSchema": {}
+}
