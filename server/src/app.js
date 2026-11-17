@@ -12,7 +12,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { authenticate } from './middleware/auth.js';
 import { HttpError } from './http-errors.js';
-import { pingDb } from './db/knex.js';
+import { pingDb } from './db/index.js';
 import formsRouter, { executionsRouter } from './routes/forms.js';
 import { definitionSchema } from './services/definition-schema.js';
 import { trackException } from './telemetry.js';

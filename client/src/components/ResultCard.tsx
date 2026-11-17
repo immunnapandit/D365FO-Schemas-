@@ -62,7 +62,7 @@ export function Pipeline({ result, running, authType }: { result: ExecuteResult 
             </span>
             <span className="step-text">
               <span className="step-label">{s.label}</span>
-              {st !== 'waiting' && st !== 'running' && s.note && <span className="step-note">{s.note}</span>}
+              {(st === 'done' || st === 'skipped' || (st === 'failed' && i === 2)) && s.note && <span className="step-note">{s.note}</span>}
               <span className="sr-only">
                 {st === 'done' ? 'completed' : st === 'failed' ? 'failed' : st === 'skipped' ? 'skipped' : st === 'running' ? 'in progress' : 'not reached'}
               </span>

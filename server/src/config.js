@@ -70,6 +70,21 @@ function dbConfig() {
       pool: { min: 0, max: int(env.DB_POOL_MAX, 10) },
     };
   }
+  if (client === 'cosmos' || client === 'cosmosdb') {
+    const keyAuth = !!env.COSMOS_KEY;
+    return {
+      kind: 'cosmos',
+      endpoint: env.COSMOS_ENDPOINT || '',
+      key: env.COSMOS_KEY || '',
+      database: env.COSMOS_DATABASE || 'schemaforms',
+      // with a key the app can create the database and containers itself;
+      // with Entra ID (managed identity) they must exist already (data-plane RBAC cannot create them)
+      createContainers: bool(env.COSMOS_CREATE_CONTAINERS, keyAuth),
+      managedIdentityClientId: env.COSMOS_MANAGED_IDENTITY_CLIENT_ID || undefined,
+      // only for the local Cosmos DB emulator, which uses a self-signed certificate
+      allowSelfSignedCert: bool(env.COSMOS_ALLOW_SELF_SIGNED_CERT, false),
+    };
+  }
   return { client, kind: client || 'none' };
 }
 
@@ -129,8 +144,12 @@ export function validateConfig(c = config) {
   const warnings = [];
 
   // database
-  if (!['sqlite', 'mssql', 'pg'].includes(c.db.kind)) {
-    errors.push('DB_CLIENT must be one of: mssql (Azure SQL), pg (PostgreSQL), sqlite (local dev only).');
+  if (!['sqlite', 'mssql', 'pg', 'cosmos'].includes(c.db.kind)) {
+    errors.push('DB_CLIENT must be one of: cosmos (Azure Cosmos DB), mssql (Azure SQL), pg (PostgreSQL), sqlite (local dev only).');
+  }
+  if (c.db.kind === 'cosmos') {
+    if (!c.db.endpoint) errors.push('COSMOS_ENDPOINT is required for Cosmos DB (e.g. https://myaccount.documents.azure.com:443/).');
+    if (c.isProd && c.db.allowSelfSignedCert) errors.push('COSMOS_ALLOW_SELF_SIGNED_CERT is only for the local emulator.');
   }
   if (c.db.kind === 'mssql') {
     if (!c.db.connection.server) errors.push('DB_HOST is required for Azure SQL.');

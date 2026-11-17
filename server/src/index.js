@@ -2,7 +2,7 @@
 import { flushTelemetry } from './telemetry.js';
 import { config, validateConfig } from './config.js';
 import { logger } from './logger.js';
-import { initDb, closeDb } from './db/knex.js';
+import { initDb, closeDb } from './db/index.js';
 import { createApp } from './app.js';
 import { seedSampleForms } from './services/seed.js';
 import { purgeOldExecutions } from './repositories/executions.js';

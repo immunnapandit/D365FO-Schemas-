@@ -92,6 +92,41 @@ ALTER ROLE db_ddladmin  ADD MEMBER [schema-forms];   -- needed for migrations on
 Tables are created and upgraded automatically when the app starts. Migrations are safe with several replicas
 because they take a database lock.
 
+## 3b. Azure Cosmos DB (instead of Azure SQL)
+
+Use this when the team stores data in Cosmos DB. The app uses the **Cosmos DB for NoSQL** API (not the MongoDB API).
+Skip step 3 if you use this.
+
+It needs three containers. With an account key (`COSMOS_KEY`) the app creates them itself on start-up. With managed
+identity it cannot (creating containers is a control-plane action), so create them once:
+
+```bash
+az cosmosdb sql database create -a <account> -g <rg> -n schemaforms
+az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n forms        -p /id
+az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n formVersions -p /formId
+az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n executions   -p /formId --ttl -1
+```
+
+`--ttl -1` turns on time-to-live without a default; each history item carries its own `ttl`
+(`HISTORY_RETENTION_DAYS`), so Cosmos deletes old history by itself.
+
+Managed identity (recommended in Azure): give the Container App's identity the data role:
+
+```bash
+az cosmosdb sql role assignment create -a <account> -g <rg> --scope "/" \
+  --principal-id <container-app-principal-id> \
+  --role-definition-id 00000000-0000-0000-0000-000000000002   # Cosmos DB Built-in Data Contributor
+```
+
+Settings: `DB_CLIENT=cosmos`, `COSMOS_ENDPOINT`, `COSMOS_DATABASE`, and either `COSMOS_KEY` (store it as a Container
+App secret) or nothing for managed identity. With a shared account, use a database name only this app uses.
+
+Notes:
+- Saving a form uses the document `_etag`, so two people editing the same form at once cannot overwrite each other.
+- Cosmos has no transactions across containers. If writing a version history item fails, the form is still saved and
+  the failure is logged.
+- `npm run reencrypt` works the same way on Cosmos.
+
 ## 4. Container App
 
 ```bash
@@ -174,7 +209,11 @@ One-time setup:
 |---|---|---|---|
 | `NODE_ENV` | yes | – | `production` in Azure (enables strict checks) |
 | `PORT` | | 4000 (8080 in image) | listen port |
-| `DB_CLIENT` | yes | sqlite (dev) | `mssql`, `pg`, or `sqlite` (dev only) |
+| `DB_CLIENT` | yes | sqlite (dev) | `cosmos`, `mssql`, `pg`, or `sqlite` (dev only) |
+| `COSMOS_ENDPOINT`, `COSMOS_DATABASE` | cosmos | `schemaforms` | Cosmos DB account URL and database |
+| `COSMOS_KEY` | | | account key; empty = managed identity |
+| `COSMOS_CREATE_CONTAINERS` | | true with key | create database/containers on start-up |
+| `COSMOS_MANAGED_IDENTITY_CLIENT_ID` | | | only for a user-assigned identity |
 | `DB_HOST`, `DB_NAME` | mssql | | Azure SQL server and database |
 | `DB_AUTH` | | `sql` | `managed-identity` or `sql` (`DB_USER`, `DB_PASSWORD`) |
 | `DB_MANAGED_IDENTITY_CLIENT_ID` | | | only for a user-assigned identity |

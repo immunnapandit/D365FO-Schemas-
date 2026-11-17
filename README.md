@@ -15,7 +15,7 @@ sees the real reason (for F&O, the infolog text).
 └──────────────────┘               │ • run history, versions, audit       │           │ custom service /   │
                                    └──────────────┬───────────────────────┘           │ any REST API       │
                                                   │                                   └────────────────────┘
-                                         Azure SQL / PostgreSQL
+                                         Cosmos DB / Azure SQL / PostgreSQL
 ```
 
 ## Features
@@ -39,7 +39,7 @@ sees the real reason (for F&O, the infolog text).
 - Outbound calls only to `ALLOWED_HOSTS` (SSRF protection), with timeouts, a response size limit, safe retries and token refresh on 401
 - Strict security headers (no `unsafe-eval` / inline scripts), rate limiting, request IDs, structured logs with secrets redacted
 - Application Insights, health probes, graceful shutdown, history retention
-- Azure SQL (managed identity supported) or PostgreSQL; SQLite only for local development
+- Azure Cosmos DB for NoSQL, Azure SQL (both with managed identity) or PostgreSQL; SQLite only for local development
 - 35 automated tests, lint, type check, Docker image, Azure DevOps pipeline
 
 ## Quick start (local)
@@ -72,7 +72,7 @@ To use them, fill in `FNO_*` in `server/.env`. The F&O prerequisites are in
 ## Documentation
 
 - [docs/schema-reference.md](docs/schema-reference.md): how to write a schema definition (auth types, placeholders, filters)
-- [docs/deployment.md](docs/deployment.md): Azure setup step by step (Entra ID, Azure SQL, Key Vault, Container Apps / Web App, pipeline)
+- [docs/deployment.md](docs/deployment.md): Azure setup step by step (Entra ID, Cosmos DB or Azure SQL, Key Vault, Container Apps / Web App, pipeline)
 - [docs/operations.md](docs/operations.md): monitoring, troubleshooting, key rotation, backups
 
 ## Project structure

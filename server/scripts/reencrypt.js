@@ -7,7 +7,9 @@
  *   3. remove SECRET_ENCRYPTION_KEYS_PREVIOUS
  */
 import { config, validateConfig } from '../src/config.js';
-import { initDb, getDb, closeDb } from '../src/db/knex.js';
+import { initDb, closeDb, usesCosmos } from '../src/db/index.js';
+import { getDb } from '../src/db/knex.js';
+import { rewriteAllSecrets } from '../src/repositories/cosmos-forms.js';
 import { reencryptDefinition } from '../src/services/secrets.js';
 import { logger } from '../src/logger.js';
 
@@ -22,20 +24,24 @@ if (!config.security.encryptionKey) {
 }
 
 await initDb();
-const db = getDb();
 let forms = 0;
 let versions = 0;
-await db.transaction(async (trx) => {
-  for (const row of await trx('forms').select('id', 'definition')) {
-    const def = reencryptDefinition(JSON.parse(row.definition));
-    await trx('forms').where({ id: row.id }).update({ definition: JSON.stringify(def) });
-    forms += 1;
-  }
-  for (const row of await trx('form_versions').select('id', 'snapshot')) {
-    const snap = reencryptDefinition(JSON.parse(row.snapshot));
-    await trx('form_versions').where({ id: row.id }).update({ snapshot: JSON.stringify(snap) });
-    versions += 1;
-  }
-});
+if (usesCosmos()) {
+  ({ forms, versions } = await rewriteAllSecrets(reencryptDefinition));
+} else {
+  const db = getDb();
+  await db.transaction(async (trx) => {
+    for (const row of await trx('forms').select('id', 'definition')) {
+      const def = reencryptDefinition(JSON.parse(row.definition));
+      await trx('forms').where({ id: row.id }).update({ definition: JSON.stringify(def) });
+      forms += 1;
+    }
+    for (const row of await trx('form_versions').select('id', 'snapshot')) {
+      const snap = reencryptDefinition(JSON.parse(row.snapshot));
+      await trx('form_versions').where({ id: row.id }).update({ snapshot: JSON.stringify(snap) });
+      versions += 1;
+    }
+  });
+}
 logger.info({ forms, versions }, 'secrets re-encrypted with the current key');
 await closeDb();
