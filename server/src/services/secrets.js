@@ -65,8 +65,8 @@ function mapSecrets(value, fn, key = '') {
   return isSecretLiteral(key, value) ? fn(value) : value;
 }
 
-/** auth + api sections are the only places secrets live */
-const SECRET_SECTIONS = ['auth', 'api'];
+/** auth + api (forms) and auth + variables + headers (modules) are the only places secrets live */
+const SECRET_SECTIONS = ['auth', 'api', 'variables', 'headers'];
 
 function mapDefinition(def, fn) {
   const out = { ...def };

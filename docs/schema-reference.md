@@ -164,3 +164,32 @@ See the react-jsonschema-form documentation for all `uiSchema` options.
 | `auth` | the token request failed (wrong secret, app not registered…) |
 | `network` | host unreachable, timeout, or not in `ALLOWED_HOSTS` |
 | `api` | the target API returned 4xx/5xx. The F&O infolog is taken from `error.innererror`. |
+
+## Modules and OpenAPI import
+
+A **module** groups forms in the sidebar (a form's `category` is its module name) and holds what its forms share:
+
+| Part | What it is |
+|---|---|
+| Sign-in (`auth`) | Same options as a form's sign-in. Forms with `"auth": { "type": "module" }` use it. |
+| Variables | Values for `{{name}}` placeholders in URLs and sign-in fields, e.g. `{{tenantId}}` (like Postman collection variables). `{{var:name}}` also works. Values may use `{{env:…}}` / `{{kv:…}}`. |
+| Headers | Sent with every request of the module, e.g. `Ocp-Apim-Subscription-Key`. |
+
+Secrets in all three are stored encrypted and shown masked. Admins open a module by clicking its name in the sidebar.
+
+### Import from OpenAPI
+
+1. In Postman, export the collection as **OpenAPI** (YAML or JSON).
+2. In the app choose **Import**, pick the file, check the preview, and import.
+3. Open the module and fill in the sign-in (client ID, secret, scope) and variables once. Use **Test sign-in**.
+
+What the import does:
+
+- The collection (`info.title`) becomes the module. The name can be changed before importing.
+- The token request (`…/oauth2/v2.0/token`, or a body with `grant_type`) is **not** a form. It becomes the module's
+  OAuth 2.0 sign-in, so the backend gets the token itself before each call.
+- Every other request becomes a form: method and URL from the file; path and query parameters become fields; the JSON
+  request body schema becomes the form. When the body only has an example (common in Postman exports), the fields are
+  built from the example. `@odata.*` and read-only properties are left out.
+- Importing the same file again updates the forms with the same name (a new version each) instead of adding copies.
+  The module's sign-in is kept.

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { canSignOut, signOut } from '../lib/auth'
 import type { CurrentUser, FormSummary } from '../lib/types'
-import { groupByModule } from '../lib/modules'
+import { groupByModule, UNGROUPED } from '../lib/modules'
 import Icon from './Icon'
 
 interface Props {
@@ -11,13 +11,16 @@ interface Props {
   user: CurrentUser
   onSelect: (id: string) => void
   onNew: () => void
+  onImport: () => void
+  onModule: (name: string) => void
+  selectedModule: string | null
   onHome: () => void
 }
 
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('')
 
-export default function Sidebar({ forms, selectedId, loading, user, onSelect, onNew, onHome }: Props) {
+export default function Sidebar({ forms, selectedId, loading, user, onSelect, onNew, onImport, onModule, selectedModule, onHome }: Props) {
   const [q, setQ] = useState('')
   const groups = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -33,9 +36,14 @@ export default function Sidebar({ forms, selectedId, loading, user, onSelect, on
       </button>
 
       {user.isAdmin && (
-        <button className="btn btn-primary new-btn" onClick={onNew}>
-          <Icon name="plus" size={16} /> New form
-        </button>
+        <div className="new-row">
+          <button className="btn btn-primary new-btn" onClick={onNew}>
+            <Icon name="plus" size={16} /> New form
+          </button>
+          <button className="btn import-btn" onClick={onImport} title="Import a Postman collection exported as OpenAPI">
+            <Icon name="upload" size={16} /> Import
+          </button>
+        </div>
       )}
 
       <div className="search">
@@ -50,7 +58,20 @@ export default function Sidebar({ forms, selectedId, loading, user, onSelect, on
         )}
         {groups.map(([module, items]) => (
           <section key={module}>
-            <h2>{module}</h2>
+            {user.isAdmin && module !== UNGROUPED ? (
+              <h2>
+                <button
+                  className={`module-btn ${selectedModule === module ? 'active' : ''}`}
+                  onClick={() => onModule(module)}
+                  title={`Sign-in and settings of ${module}`}
+                >
+                  <span>{module}</span>
+                  <Icon name="settings" size={14} />
+                </button>
+              </h2>
+            ) : (
+              <h2>{module}</h2>
+            )}
             {items.map((f) => (
               <button
                 key={f.id}
@@ -82,6 +103,3 @@ export default function Sidebar({ forms, selectedId, loading, user, onSelect, on
     </aside>
   )
 }
-
-
-//Comment Added

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import FormRunner from './components/FormRunner'
 import SchemaEditor from './components/SchemaEditor'
+import ModulePage from './components/ModulePage'
+import ImportPage from './components/ImportPage'
 import { api, ApiError } from './lib/api'
 import { canSignOut, initAuth, signOut } from './lib/auth'
 import { groupByModule } from './lib/modules'
@@ -14,10 +16,15 @@ type View =
   | { kind: 'run'; id: string }
   | { kind: 'edit'; def: FormDefinition }
   | { kind: 'new'; def: FormDefinition | null }
+  | { kind: 'module'; name: string }
+  | { kind: 'import' }
 
 function viewFromHash(): View {
   const m = location.hash.match(/^#\/form\/(.+)$/)
-  return m ? { kind: 'run', id: decodeURIComponent(m[1]) } : { kind: 'welcome' }
+  if (m) return { kind: 'run', id: decodeURIComponent(m[1]) }
+  const mod = location.hash.match(/^#\/module\/(.+)$/)
+  if (mod) return { kind: 'module', name: decodeURIComponent(mod[1]) }
+  return { kind: 'welcome' }
 }
 
 type Boot = { phase: 'loading' } | { phase: 'error'; message: string; status?: number } | { phase: 'ready'; user: CurrentUser }
@@ -60,7 +67,14 @@ export default function App() {
   // keep the URL in sync so a refresh / shared link opens the same form
   useEffect(() => {
     if (boot.phase !== 'ready') return
-    const hash = view.kind === 'run' ? `#/form/${encodeURIComponent(view.id)}` : view.kind === 'welcome' ? '' : location.hash
+    const hash =
+      view.kind === 'run'
+        ? `#/form/${encodeURIComponent(view.id)}`
+        : view.kind === 'module'
+          ? `#/module/${encodeURIComponent(view.name)}`
+          : view.kind === 'welcome'
+            ? ''
+            : location.hash
     if (hash !== location.hash) history.replaceState(null, '', hash || location.pathname)
   }, [view, boot.phase])
 
@@ -112,6 +126,15 @@ export default function App() {
           user={user}
           onSelect={open}
           onNew={() => newForm()}
+          onImport={() => {
+            setView({ kind: 'import' })
+            setMenuOpen(false)
+          }}
+          onModule={(name) => {
+            setView({ kind: 'module', name })
+            setMenuOpen(false)
+          }}
+          selectedModule={view.kind === 'module' ? view.name : null}
           onHome={() => {
             goHome()
             setMenuOpen(false)
@@ -141,6 +164,7 @@ export default function App() {
                 </div>
                 {user.isAdmin && (
                   <div className="actions">
+                    <button className="btn" onClick={() => setView({ kind: 'import' })}><Icon name="upload" size={16} /> Import OpenAPI</button>
                     <button className="btn btn-primary" onClick={() => newForm()}><Icon name="plus" size={16} /> New form</button>
                   </div>
                 )}
@@ -177,6 +201,33 @@ export default function App() {
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 const { id, version, createdAt, createdBy, updatedAt, updatedBy, ...rest } = def
                 newForm({ ...rest, name: `${def.name} (copy)` })
+              }}
+            />
+          )}
+
+          {view.kind === 'module' && user.isAdmin && (
+            <ModulePage
+              key={view.name}
+              name={view.name}
+              forms={forms.filter((f) => (f.category ?? '').trim().toLowerCase() === view.name.trim().toLowerCase())}
+              onOpenForm={open}
+              onChanged={async (newName) => {
+                await refresh()
+                if (newName) setView({ kind: 'module', name: newName })
+              }}
+              onDeleted={async () => {
+                await refresh()
+                setView({ kind: 'welcome' })
+              }}
+            />
+          )}
+
+          {view.kind === 'import' && user.isAdmin && (
+            <ImportPage
+              onCancel={goHome}
+              onDone={async (moduleName) => {
+                await refresh()
+                setView({ kind: 'module', name: moduleName })
               }}
             />
           )}

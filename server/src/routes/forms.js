@@ -5,6 +5,8 @@ import { badRequest, notFound, HttpError } from '../http-errors.js';
 import { canAccessForm, requireAdmin } from '../middleware/auth.js';
 import * as forms from '../repositories/forms.js';
 import * as executions from '../repositories/executions.js';
+import * as modules from '../repositories/modules.js';
+import { decryptModule } from './modules.js';
 import { validateDefinition } from '../services/definition-schema.js';
 import { containsMask, decryptDefinition, maskDefinition } from '../services/secrets.js';
 import { execute, testAuth } from '../services/executor.js';
@@ -159,6 +161,7 @@ router.post(
       allowedRoles: s.allowedRoles,
       auth: s.auth,
       api: s.api,
+      source: s.source,
       formSchema: s.formSchema,
       uiSchema: s.uiSchema,
     };
@@ -181,7 +184,8 @@ router.post(
     if (formData !== undefined && (typeof formData !== 'object' || Array.isArray(formData) || formData === null)) {
       throw badRequest('"formData" must be an object');
     }
-    const result = await execute(form, formData ?? {});
+    const mod = decryptModule(await modules.getModuleByName(form.category));
+    const result = await execute(form, formData ?? {}, mod);
 
     let executionId;
     try {
@@ -211,7 +215,8 @@ router.post(
   requireAdmin,
   wrap(async (req, res) => {
     const stored = await loadAccessible(req);
-    res.json({ ...(await testAuth(decryptOrFail(stored))), requestId: req.id });
+    const mod = decryptModule(await modules.getModuleByName(stored.category));
+    res.json({ ...(await testAuth(decryptOrFail(stored), mod)), requestId: req.id });
   }),
 );
 

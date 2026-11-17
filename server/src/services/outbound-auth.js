@@ -139,6 +139,9 @@ export async function getAuthHeaders(rawAuth, ctx, { force = false } = {}) {
   if (!AUTH_TYPES.includes(auth.type)) {
     throw new StageError('config', `Unknown auth.type "${auth.type}". Use one of: ${AUTH_TYPES.join(', ')}`);
   }
+  if (auth.type === 'module') {
+    throw new StageError('config', "This form uses its module's sign-in, but the module has none. Open the module and set up its sign-in.");
+  }
   let cfg;
   try {
     cfg = resolveDeep(auth, ctx);

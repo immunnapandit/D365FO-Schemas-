@@ -124,3 +124,22 @@ test('cosmos: delete is soft and versioned', { skip }, async () => {
   const versions = (await request(app).get(`/api/forms/${formId}/versions`).expect(200)).body;
   assert.equal(versions[0].changeType, 'delete');
 });
+
+test('cosmos: modules keep secrets encrypted and detect concurrent edits', { skip }, async () => {
+  const created = (
+    await request(app)
+      .post('/api/modules')
+      .send({ name: 'Cosmos module', auth: { type: 'basic', username: 'u', password: 'p' }, variables: { tenantId: 't1' } })
+      .expect(201)
+  ).body;
+  assert.equal(created.auth.password, '••••••••');
+  const { resource } = await db.cosmosContainer('modules').item(created.id, created.id).read();
+  assert.match(resource.auth.password, /^enc:v1:/);
+
+  const saved = (await request(app).put(`/api/modules/${created.id}`).send({ ...created, description: 'x' }).expect(200)).body;
+  assert.equal(saved.version, 2);
+  await request(app).put(`/api/modules/${created.id}`).send({ ...created, description: 'old tab' }).expect(409);
+  const list = (await request(app).get('/api/modules').expect(200)).body;
+  assert.ok(list.some((m) => m.name === 'Cosmos module'));
+  await request(app).delete(`/api/modules/${created.id}`).expect(204);
+});

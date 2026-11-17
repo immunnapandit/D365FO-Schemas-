@@ -25,7 +25,7 @@ const parse = (s, fallback) => {
     return fallback;
   }
 };
-const DEFINITION_KEYS = ['auth', 'api', 'formSchema', 'uiSchema'];
+const DEFINITION_KEYS = ['auth', 'api', 'source', 'formSchema', 'uiSchema'];
 
 function docToForm(doc) {
   return {
@@ -231,6 +231,13 @@ export async function rewriteAllSecrets(transform) {
       const def = transform(parse(doc.definition, {}));
       await forms().item(doc.id, doc.id).replace({ ...doc, definition: JSON.stringify(def) });
       formCount += 1;
+    }
+  }
+  const modules = cosmosContainer('modules');
+  for await (const page of modules.items.readAll().getAsyncIterator()) {
+    for (const doc of page.resources) {
+      const { auth, variables, headers } = transform({ auth: doc.auth, variables: doc.variables, headers: doc.headers });
+      await modules.item(doc.id, doc.id).replace({ ...doc, auth, variables, headers });
     }
   }
   for await (const page of versions().items.readAll().getAsyncIterator()) {

@@ -1,13 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useState } from 'react'
 import Form from '@rjsf/core'
 import { validator } from '../lib/validator'
 import { api, ApiError } from '../lib/api'
 import { templates } from '../lib/templates'
 import { fullDate, timeAgo } from '../lib/format'
 import { FIELD_KINDS, fieldProblems, fromFields, newField, toFields, type DesignField, type FieldKind } from '../lib/designer'
-import type { AuthType, FormDefinition, FormVersion } from '../lib/types'
+import type { FormDefinition, FormVersion } from '../lib/types'
 import ErrorBoundary from './ErrorBoundary'
 import Icon from './Icon'
+import AuthFields from './AuthFields'
+import { Field, JsonText, Pairs, Text } from './inputs'
 import { FORM_ICONS, isFormIcon } from '../lib/icons'
 import { useFeedback } from '../lib/feedback'
 
@@ -16,7 +18,6 @@ const JsonEditor = lazy(() => import('./JsonEditor'))
 let definitionSchemaCache: Promise<object> | null = null
 const loadDefinitionSchema = () => (definitionSchemaCache ??= api.definitionSchema().catch(() => ({})))
 
-const MASK = '••••••••'
 
 interface Props {
   mode: 'new' | 'edit'
@@ -37,221 +38,10 @@ function editable(def: FormDefinition): FormDefinition {
 
 type Tab = 'details' | 'connection' | 'request' | 'fields' | 'json' | 'versions'
 
-const AUTH_OPTIONS: { value: AuthType; label: string; hint: string }[] = [
-  { value: 'oauth2_client_credentials', label: 'Microsoft Entra ID app (client ID and secret)', hint: 'Used by D365 Finance & Operations and other Entra ID protected APIs.' },
-  { value: 'oauth2_password', label: 'Token URL with user name and password', hint: 'OAuth 2.0 sign-in with a service account.' },
-  { value: 'token_endpoint', label: 'Custom login request', hint: 'Call any login URL and read the token from its response.' },
-  { value: 'bearer_static', label: 'Fixed bearer token', hint: 'A token you already have.' },
-  { value: 'basic', label: 'Basic (user name and password)', hint: 'Sent with every request.' },
-  { value: 'api_key', label: 'API key header', hint: 'A fixed header such as Ocp-Apim-Subscription-Key.' },
-  { value: 'none', label: 'No authentication', hint: 'The API is open.' },
-]
-
-/* ------------------------------------------------------------------ small inputs */
-
-function Field({ label, hint, children, wide }: { label: string; hint?: ReactNode; children: (id: string) => ReactNode; wide?: boolean }) {
-  const id = useId()
-  return (
-    <div className={`field ${wide ? 'field-wide' : ''}`}>
-      <label htmlFor={id}>{label}</label>
-      {children(id)}
-      {hint && <p className="field-hint">{hint}</p>}
-    </div>
-  )
-}
-
-function Text(props: {
-  label: string; value: unknown; onChange: (v: string) => void; hint?: ReactNode
-  placeholder?: string; mono?: boolean; wide?: boolean; secret?: boolean
-}) {
-  const value = typeof props.value === 'string' ? props.value : props.value == null ? '' : String(props.value)
-  const stored = props.secret && value === MASK
-  return (
-    <Field
-      label={props.label}
-      wide={props.wide}
-      hint={stored ? 'A value is stored and hidden. Type to replace it.' : props.hint}
-    >
-      {(id) => (
-        <input
-          id={id}
-          className={`input ${props.mono ? 'mono' : ''}`}
-          // typed secrets are hidden; {{kv:...}} / {{env:...}} references stay readable
-          type={props.secret && value !== '' && !value.trimStart().startsWith('{{') ? 'password' : 'text'}
-          value={value}
-          placeholder={props.placeholder}
-          spellCheck={false}
-          autoComplete={props.secret ? 'new-password' : 'off'}
-          onFocus={(e) => stored && e.currentTarget.select()}
-          onChange={(e) => props.onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  )
-}
-
-/** A JSON value edited as text; only valid JSON is passed on. */
-function JsonText({ label, value, onChange, hint, rows = 6 }: {
-  label: string; value: unknown; onChange: (v: unknown) => void; hint?: ReactNode; rows?: number
-}) {
-  const [text, setText] = useState(() => (value === undefined ? '' : JSON.stringify(value, null, 2)))
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <Field label={label} wide hint={error ? <span className="bad">Not valid JSON: {error}</span> : hint}>
-      {(id) => (
-        <textarea
-          id={id}
-          className="input mono"
-          rows={rows}
-          spellCheck={false}
-          value={text}
-          onChange={(e) => {
-            const t = e.target.value
-            setText(t)
-            if (!t.trim()) {
-              setError(null)
-              onChange(undefined)
-              return
-            }
-            try {
-              onChange(JSON.parse(t))
-              setError(null)
-            } catch (err) {
-              setError((err as Error).message)
-            }
-          }}
-        />
-      )}
-    </Field>
-  )
-}
-
-function Pairs({ label, value, onChange, keyLabel, valueLabel }: {
-  label: string; value: Record<string, string> | undefined; onChange: (v: Record<string, string> | undefined) => void
-  keyLabel: string; valueLabel: string
-}) {
-  const [rows, setRows] = useState<[string, string][]>(() => Object.entries(value ?? {}))
-  function commit(next: [string, string][]) {
-    setRows(next)
-    const obj = Object.fromEntries(next.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v]))
-    onChange(Object.keys(obj).length ? obj : undefined)
-  }
-  return (
-    <div className="field field-wide">
-      <span className="field-label">{label}</span>
-      {rows.map(([k, v], i) => (
-        <div className="pair-row" key={i}>
-          <input className="input mono" aria-label={keyLabel} placeholder={keyLabel} value={k} spellCheck={false}
-            onChange={(e) => commit(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} />
-          <input className="input mono" aria-label={valueLabel} placeholder={valueLabel} value={v} spellCheck={false}
-            onChange={(e) => commit(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
-          <button className="icon-btn" aria-label={`Remove ${k || keyLabel}`} onClick={() => commit(rows.filter((_, j) => j !== i))}>
-            <Icon name="x" size={16} />
-          </button>
-        </div>
-      ))}
-      <button className="btn btn-quiet btn-sm" onClick={() => setRows([...rows, ['', '']])}>
-        <Icon name="plus" size={14} /> Add {keyLabel.toLowerCase()}
-      </button>
-    </div>
-  )
-}
-
-const SECRET_HINT = (
-  <>Use <code>{'{{kv:secret-name}}'}</code> to read it from Key Vault. A value typed here is stored encrypted.</>
-)
-
 /* ------------------------------------------------------------------ panels */
 
 function ConnectionPanel({ def, update }: { def: FormDefinition; update: (d: FormDefinition) => void }) {
-  const auth = def.auth as Record<string, unknown> & { type: AuthType }
-  const set = (key: string, value: unknown) => {
-    const next = { ...auth, [key]: value }
-    if (value === '' || value === undefined) delete next[key]
-    update({ ...def, auth: next as FormDefinition['auth'] })
-  }
-  const option = AUTH_OPTIONS.find((o) => o.value === auth.type)
-  const oauth = auth.type === 'oauth2_client_credentials' || auth.type === 'oauth2_password'
-
-  return (
-    <div className="panel-grid">
-      <Field label="How the API is signed in to" wide hint={option?.hint}>
-        {(id) => (
-          <select id={id} className="input" value={auth.type}
-            onChange={(e) => update({ ...def, auth: { type: e.target.value as AuthType } })}>
-            {AUTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        )}
-      </Field>
-
-      {oauth && (
-        <>
-          <Text label="Token URL" wide mono value={auth.tokenUrl} onChange={(v) => set('tokenUrl', v)}
-            placeholder="https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token" />
-          <Text label={auth.type === 'oauth2_password' ? 'Client ID (optional)' : 'Client ID'} mono value={auth.clientId} onChange={(v) => set('clientId', v)} />
-          <Text label={auth.type === 'oauth2_password' ? 'Client secret (optional)' : 'Client secret'} mono secret value={auth.clientSecret}
-            onChange={(v) => set('clientSecret', v)} hint={SECRET_HINT} />
-          {auth.type === 'oauth2_password' && (
-            <>
-              <Text label="User name" value={auth.username} onChange={(v) => set('username', v)} />
-              <Text label="Password" mono secret value={auth.password} onChange={(v) => set('password', v)} hint={SECRET_HINT} />
-            </>
-          )}
-          <Text label="Scope" wide mono value={auth.scope} onChange={(v) => set('scope', v)}
-            placeholder="https://<environment>.operations.dynamics.com/.default"
-            hint="For F&O: the environment URL followed by /.default" />
-        </>
-      )}
-
-      {auth.type === 'basic' && (
-        <>
-          <Text label="User name" value={auth.username} onChange={(v) => set('username', v)} />
-          <Text label="Password" mono secret value={auth.password} onChange={(v) => set('password', v)} hint={SECRET_HINT} />
-        </>
-      )}
-
-      {auth.type === 'bearer_static' && (
-        <Text label="Token" wide mono secret value={auth.token} onChange={(v) => set('token', v)} hint={SECRET_HINT} />
-      )}
-
-      {auth.type === 'api_key' && (
-        <>
-          <Text label="Header name" mono value={auth.headerName} onChange={(v) => set('headerName', v)} placeholder="Ocp-Apim-Subscription-Key" />
-          <Text label="Header value" mono secret value={auth.value} onChange={(v) => set('value', v)} hint={SECRET_HINT} />
-        </>
-      )}
-
-      {auth.type === 'token_endpoint' && (
-        <>
-          <Text label="Login URL" wide mono value={auth.url} onChange={(v) => set('url', v)} placeholder="https://api.contoso.com/auth/login" />
-          <Field label="Method">
-            {(id) => (
-              <select id={id} className="input" value={(auth.method as string) ?? 'POST'} onChange={(e) => set('method', e.target.value)}>
-                {['POST', 'GET', 'PUT'].map((m) => <option key={m}>{m}</option>)}
-              </select>
-            )}
-          </Field>
-          <Field label="Send the body as">
-            {(id) => (
-              <select id={id} className="input" value={(auth.bodyType as string) ?? 'json'} onChange={(e) => set('bodyType', e.target.value)}>
-                <option value="json">JSON</option>
-                <option value="form">Form fields (x-www-form-urlencoded)</option>
-              </select>
-            )}
-          </Field>
-          <JsonText label="Login request body" value={auth.body} onChange={(v) => set('body', v)}
-            hint={<>For example <code>{'{ "username": "svc-user", "password": "{{kv:api-password}}" }'}</code></>} />
-          <Text label="Where the token is in the response" mono value={auth.tokenPath} onChange={(v) => set('tokenPath', v)}
-            placeholder="access_token" hint="Use dots for nested values, for example data.token" />
-          <Text label="Where the lifetime (seconds) is" mono value={auth.expiresInPath} onChange={(v) => set('expiresInPath', v)} placeholder="expires_in" />
-          <Text label="Header the token is sent in" mono value={auth.headerName} onChange={(v) => set('headerName', v)} placeholder="Authorization" />
-          <Text label="Text before the token" mono value={auth.prefix} onChange={(v) => set('prefix', v)} placeholder="Bearer " />
-        </>
-      )}
-
-      {auth.type === 'none' && <p className="muted field-wide">Requests are sent without credentials.</p>}
-    </div>
-  )
+  return <AuthFields value={def.auth} onChange={(auth) => update({ ...def, auth })} allowModule moduleName={def.category} />
 }
 
 function RequestPanel({ def, update }: { def: FormDefinition; update: (d: FormDefinition) => void }) {
@@ -406,7 +196,7 @@ function FieldsPanel({ def, update, openJson }: { def: FormDefinition; update: (
   )
 }
 
-const CHANGE_LABEL: Record<FormVersion['changeType'], string> = { create: 'Created', update: 'Edited', delete: 'Deleted', restore: 'Restored' }
+const CHANGE_LABEL: Record<FormVersion['changeType'], string> = { create: 'Created', update: 'Edited', delete: 'Deleted', restore: 'Restored', import: 'Imported' }
 
 /* ------------------------------------------------------------------ designer */
 

@@ -74,7 +74,35 @@ const SECRET_ENV = /secret|password|passwd|token|key|credential/i;
 function previewContext(ctx) {
   const env = new Proxy(ctx.env, { get: (t, k) => (typeof k === 'string' && SECRET_ENV.test(k) && t[k] ? MASK : t[k]) });
   const kv = Object.fromEntries(Object.keys(ctx.kv || {}).map((k) => [k, MASK]));
-  return { ...ctx, env, kv };
+  const vars = Object.fromEntries(Object.entries(ctx.vars || {}).map(([k, v]) => [k, SECRET_ENV.test(k) && v ? MASK : v]));
+  return { ...ctx, env, kv, vars };
+}
+
+/**
+ * Forms imported from OpenAPI (and new forms) use their module's sign-in: auth.type = "module".
+ * The module also provides the {{variables}} used in URLs and sign-in fields.
+ */
+function effective(form, mod) {
+  const vars = mod?.variables ?? {};
+  if (form.auth?.type !== 'module') return { auth: form.auth, vars };
+  if (!mod) {
+    throw new StageError(
+      'config',
+      form.category
+        ? `This form uses the sign-in of module "${form.category}", but that module has no sign-in set up yet. Open the module in the sidebar and set it up.`
+        : 'This form uses its module\'s sign-in, but it is not in a module. Choose a module on the Details tab.',
+    );
+  }
+  return { auth: mod.auth, vars };
+}
+
+/** Variable values may themselves use {{env:NAME}} or {{kv:secret}}. */
+function resolveVars(vars, kv) {
+  try {
+    return resolveDeep(vars, { env: process.env, kv });
+  } catch (e) {
+    throw new StageError('config', `Module variable: ${e.message}`);
+  }
 }
 
 function buildRequest(api, ctx) {
@@ -83,7 +111,7 @@ function buildRequest(api, ctx) {
     const pctx = previewContext(ctx);
     const url = new URL(resolveString(api.url, ctx));
     for (const [k, v] of Object.entries(resolveDeep(api.query || {}, ctx))) url.searchParams.set(k, String(v));
-    const headers = { Accept: 'application/json', ...resolveDeep(api.headers || {}, ctx) };
+    const headers = { Accept: 'application/json', ...resolveDeep(ctx.moduleHeaders || {}, ctx), ...resolveDeep(api.headers || {}, ctx) };
     let body;
     const previewUrl = new URL(resolveString(api.url, pctx));
     for (const [k, v] of Object.entries(resolveDeep(api.query || {}, pctx))) previewUrl.searchParams.set(k, String(v));
@@ -107,36 +135,41 @@ function buildRequest(api, ctx) {
 }
 
 /** Only generate the token. Used by the "Test connection" button. */
-export async function testAuth(form) {
+export async function testAuth(form, mod) {
   const started = Date.now();
   try {
-    const kv = await resolveKvRefs(form.auth);
-    const { info } = await getAuthHeaders(form.auth, { env: process.env, kv }, { force: true });
+    const { auth, vars: rawVars } = effective(form, mod);
+    const kv = await resolveKvRefs(auth, rawVars);
+    const vars = resolveVars(rawVars, kv);
+    const { info } = await getAuthHeaders(auth, { env: process.env, kv, vars }, { force: true });
     return { ok: true, message: `Authentication OK (${info.type})`, auth: info, durationMs: Date.now() - started };
   } catch (e) {
     return errorResult(e, { durationMs: Date.now() - started });
   }
 }
 
-/** form = stored definition with secrets already decrypted */
-export async function execute(form, rawFormData) {
+/** form and mod (its module, may be null) = stored definitions with secrets already decrypted */
+export async function execute(form, rawFormData, mod = null) {
   const started = Date.now();
   const timings = {};
   let requestPreview;
+  let auth; // kept outside try so a failure after sign-in still reports that sign-in worked
 
   try {
     if (!form.api?.url) throw new StageError('config', 'Schema has no api.url');
     const fd = clean(validateForm(form, rawFormData)) ?? {};
 
-    const kv = await resolveKvRefs(form.auth, form.api);
+    const { auth: authConfig, vars: rawVars } = effective(form, mod);
+    const kv = await resolveKvRefs(authConfig, form.api, rawVars, mod?.headers);
+    const vars = resolveVars(rawVars, kv);
 
     // 1) authentication (cached token, refreshed automatically)
     const t0 = Date.now();
-    let auth = await getAuthHeaders(form.auth, { env: process.env, kv, form: fd });
+    auth = await getAuthHeaders(authConfig, { env: process.env, kv, vars, form: fd });
     timings.authMs = Date.now() - t0;
 
     // 2) build the request
-    let ctx = { env: process.env, kv, form: fd, token: auth.token };
+    let ctx = { env: process.env, kv, vars, form: fd, token: auth.token, moduleHeaders: mod?.headers };
     let req = buildRequest(form.api, ctx);
     requestPreview = req.preview;
     const retries = IDEMPOTENT.has(req.method) ? 1 : 0;
@@ -153,7 +186,7 @@ export async function execute(form, rawFormData) {
     // a cached token can be revoked/expired early -> get a new one and try once more.
     // 401 means the request was not processed, so retrying is safe even for POST.
     if (res.status === 401 && auth.info?.cached) {
-      auth = await getAuthHeaders(form.auth, { env: process.env, kv, form: fd }, { force: true });
+      auth = await getAuthHeaders(authConfig, { env: process.env, kv, vars, form: fd }, { force: true });
       ctx = { ...ctx, token: auth.token };
       req = buildRequest(form.api, ctx);
       res = await call();
@@ -171,7 +204,7 @@ export async function execute(form, rawFormData) {
     let message = `Success (HTTP ${res.status})`;
     if (form.api.successMessage) {
       try {
-        message = resolveString(form.api.successMessage, { ...ctx, env: {}, kv: {}, response: res.body ?? {} });
+        message = resolveString(form.api.successMessage, { ...previewContext(ctx), env: {}, kv: {}, response: res.body ?? {} });
       } catch {
         /* keep default */
       }
@@ -187,6 +220,6 @@ export async function execute(form, rawFormData) {
       durationMs: Date.now() - started,
     };
   } catch (e) {
-    return errorResult(e, { request: requestPreview, timings, durationMs: Date.now() - started });
+    return errorResult(e, { request: requestPreview, auth: auth?.info, timings, durationMs: Date.now() - started });
   }
 }

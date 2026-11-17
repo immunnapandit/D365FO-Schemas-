@@ -7,6 +7,9 @@ import type {
   FormDefinition,
   FormSummary,
   FormVersion,
+  ImportPreview,
+  ImportResult,
+  ModuleDefinition,
 } from './types'
 
 export class ApiError extends Error {
@@ -95,4 +98,16 @@ export const api = {
       `/api/forms/${enc(id)}/executions?scope=${scope}&limit=50${before ? `&before=${enc(before)}` : ''}`,
     ),
   getExecution: (executionId: string) => request<ExecutionDetail>(`/api/executions/${enc(executionId)}`),
+
+  listModules: () => request<ModuleDefinition[]>('/api/modules'),
+  createModule: (m: ModuleDefinition) => request<ModuleDefinition>('/api/modules', post(m)),
+  updateModule: (id: string, m: ModuleDefinition) =>
+    request<ModuleDefinition>(`/api/modules/${enc(id)}`, { method: 'PUT', body: JSON.stringify(m) }),
+  deleteModule: (id: string) => request<void>(`/api/modules/${enc(id)}`, { method: 'DELETE' }),
+  testModuleAuth: (id: string) => request<ExecuteResult>(`/api/modules/${enc(id)}/test-auth`, post()),
+
+  previewImport: (content: string, moduleName?: string) =>
+    request<ImportPreview>('/api/import/openapi', post({ content, moduleName: moduleName || undefined })),
+  runImport: (content: string, moduleName: string, include: string[]) =>
+    request<ImportResult>('/api/import/openapi', post({ content, moduleName, include, commit: true })),
 }

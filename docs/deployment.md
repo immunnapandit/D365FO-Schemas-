@@ -97,11 +97,12 @@ because they take a database lock.
 Use this when the team stores data in Cosmos DB. The app uses the **Cosmos DB for NoSQL** API (not the MongoDB API).
 Skip step 3 if you use this.
 
-It needs three containers. With an account key (`COSMOS_KEY`) the app creates them itself on start-up. With managed
+It needs four containers. With an account key (`COSMOS_KEY`) the app creates them itself on start-up. With managed
 identity it cannot (creating containers is a control-plane action), so create them once:
 
 ```bash
 az cosmosdb sql database create -a <account> -g <rg> -n schemaforms
+az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n modules      -p /id
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n forms        -p /id
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n formVersions -p /formId
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n executions   -p /formId --ttl -1
@@ -210,6 +211,7 @@ One-time setup:
 | `NODE_ENV` | yes | – | `production` in Azure (enables strict checks) |
 | `PORT` | | 4000 (8080 in image) | listen port |
 | `DB_CLIENT` | yes | sqlite (dev) | `cosmos`, `mssql`, `pg`, or `sqlite` (dev only) |
+| `COSMOS_CONNECTION_STRING` | cosmos | | connection string from the portal (Keys); or use `COSMOS_ENDPOINT` + `COSMOS_KEY` |
 | `COSMOS_ENDPOINT`, `COSMOS_DATABASE` | cosmos | `schemaforms` | Cosmos DB account URL and database |
 | `COSMOS_KEY` | | | account key; empty = managed identity |
 | `COSMOS_CREATE_CONTAINERS` | | true with key | create database/containers on start-up |

@@ -129,6 +129,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
       {user.isAdmin && (
         <dl className="facts">
           <div><dt>Request</dt><dd className="mono" title={def.api.url}>{(def.api.method || 'POST').toUpperCase()} {def.api.url}</dd></div>
+          {authType === 'module' && <div><dt>Sign-in</dt><dd>From the module {def.category ? `“${def.category}”` : '(none chosen)'}</dd></div>}
           <div><dt>Last change</dt><dd title={fullDate(def.updatedAt)}>Version {def.version} by {def.updatedBy || 'unknown'}, {timeAgo(def.updatedAt)}</dd></div>
           {!!def.allowedRoles?.length && <div><dt>Visible to</dt><dd>{def.allowedRoles.join(', ')}</dd></div>}
         </dl>
@@ -172,7 +173,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
                 {!hasFields && <p className="muted">This form has no fields. Submitting sends the request as it is.</p>}
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary" disabled={submitting}>
-                    {submitting ? 'Submitting…' : 'Submit'}
+                    {submitting ? 'Sending…' : (def.api.method || 'POST').toUpperCase() === 'GET' ? 'Send request' : 'Submit'}
                   </button>
                   <button type="button" className="btn btn-quiet" onClick={clear} disabled={submitting}>Clear form</button>
                 </div>

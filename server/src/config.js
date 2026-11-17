@@ -71,11 +71,24 @@ function dbConfig() {
     };
   }
   if (client === 'cosmos' || client === 'cosmosdb') {
-    const keyAuth = !!env.COSMOS_KEY;
+    // COSMOS_CONNECTION_STRING ("AccountEndpoint=...;AccountKey=...;", as shown in the portal) or endpoint + key
+    const cs = Object.fromEntries(
+      String(env.COSMOS_CONNECTION_STRING || '')
+        .split(';')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const i = p.indexOf('=');
+          return [p.slice(0, i).toLowerCase(), p.slice(i + 1)];
+        }),
+    );
+    const endpoint = env.COSMOS_ENDPOINT || cs.accountendpoint || '';
+    const key = env.COSMOS_KEY || cs.accountkey || '';
+    const keyAuth = !!key;
     return {
       kind: 'cosmos',
-      endpoint: env.COSMOS_ENDPOINT || '',
-      key: env.COSMOS_KEY || '',
+      endpoint,
+      key,
       database: env.COSMOS_DATABASE || 'schemaforms',
       // with a key the app can create the database and containers itself;
       // with Entra ID (managed identity) they must exist already (data-plane RBAC cannot create them)
@@ -148,7 +161,7 @@ export function validateConfig(c = config) {
     errors.push('DB_CLIENT must be one of: cosmos (Azure Cosmos DB), mssql (Azure SQL), pg (PostgreSQL), sqlite (local dev only).');
   }
   if (c.db.kind === 'cosmos') {
-    if (!c.db.endpoint) errors.push('COSMOS_ENDPOINT is required for Cosmos DB (e.g. https://myaccount.documents.azure.com:443/).');
+    if (!c.db.endpoint) errors.push('COSMOS_CONNECTION_STRING (or COSMOS_ENDPOINT) is required for Cosmos DB.');
     if (c.isProd && c.db.allowSelfSignedCert) errors.push('COSMOS_ALLOW_SELF_SIGNED_CERT is only for the local emulator.');
   }
   if (c.db.kind === 'mssql') {

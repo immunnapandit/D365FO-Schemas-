@@ -14,6 +14,7 @@ import { authenticate } from './middleware/auth.js';
 import { HttpError } from './http-errors.js';
 import { pingDb } from './db/index.js';
 import formsRouter, { executionsRouter } from './routes/forms.js';
+import modulesRouter, { importRouter } from './routes/modules.js';
 import { definitionSchema } from './services/definition-schema.js';
 import { trackException } from './telemetry.js';
 
@@ -96,6 +97,7 @@ export function createApp({ clientDist = DEFAULT_CLIENT_DIST } = {}) {
       message: { message: 'Too many requests. Please slow down.', code: 'rate_limited' },
     }),
   );
+  app.use('/api/import', express.json({ limit: '5mb' })); // OpenAPI files can be large
   app.use('/api', express.json({ limit: '1mb' }));
 
   /* ---------- public: what the browser needs to sign in ---------- */
@@ -123,6 +125,8 @@ export function createApp({ clientDist = DEFAULT_CLIENT_DIST } = {}) {
   });
   app.get('/api/meta/definition-schema', (_req, res) => res.json(definitionSchema));
   app.use('/api/forms', formsRouter);
+  app.use('/api/modules', modulesRouter);
+  app.use('/api/import', importRouter);
   app.use('/api/executions', executionsRouter);
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found', [], 'not_found')));
 

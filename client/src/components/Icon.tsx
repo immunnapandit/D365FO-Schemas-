@@ -28,6 +28,9 @@ const PATHS: Record<string, ReactNode> = {
   back: <path d="M14 6l-6 6 6 6" />,
   alert: <><path d="M12 3l9.5 17h-19z" /><path d="M12 10v4.5M12 17.5v.5" /></>,
   signout: <><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" /></>,
+  settings: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
+  upload: <path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 15v5h14v-5" />,
+  key: <><circle cx="8" cy="15" r="4" /><path d="M11 12l8-8M16 7l2 2M14 9l2 2" /></>,
 }
 
 export default function Icon({ name, size = 18, className }: { name?: string; size?: number; className?: string }) {

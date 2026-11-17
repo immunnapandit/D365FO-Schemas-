@@ -7,6 +7,7 @@
  *   {{form}}                             -> the whole form data object
  *   {{response.SalesOrderNumber}}        -> (successMessage only) value from the API response
  *   {{form.RequestedReceiptDate | datetime}}  -> with a filter
+ *   {{tenantId}} or {{var:tenantId}}     -> variable of the form's module (like Postman collection variables)
  *
  * If a string is ONLY one placeholder, the raw value is returned (numbers stay
  * numbers, objects stay objects). Otherwise placeholders are joined as text.
@@ -61,8 +62,14 @@ function evaluate(expr, ctx) {
     value = getPath(ctx.response ?? {}, source === 'response' ? '' : source.slice(9));
   } else if (source === 'token') {
     value = ctx.token;
+  } else if (source.startsWith('var:') || /^[A-Za-z_][\w-]*$/.test(source)) {
+    const name = source.startsWith('var:') ? source.slice(4).trim() : source;
+    value = ctx.vars?.[name];
+    if (value === undefined || value === '') {
+      throw new TemplateError(`Variable "${name}" has no value. Set it in the module's sign-in settings.`);
+    }
   } else {
-    throw new TemplateError(`Unknown placeholder "{{${expr}}}". Use env:, kv:, form., response. or token.`);
+    throw new TemplateError(`Unknown placeholder "{{${expr}}}". Use env:, kv:, form., response., token or a module variable.`);
   }
 
   for (const f of filterNames) {

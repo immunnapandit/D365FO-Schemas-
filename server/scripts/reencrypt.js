@@ -36,6 +36,10 @@ if (usesCosmos()) {
       await trx('forms').where({ id: row.id }).update({ definition: JSON.stringify(def) });
       forms += 1;
     }
+    for (const row of await trx('modules').select('id', 'definition')) {
+      const def = reencryptDefinition(JSON.parse(row.definition));
+      await trx('modules').where({ id: row.id }).update({ definition: JSON.stringify(def) });
+    }
     for (const row of await trx('form_versions').select('id', 'snapshot')) {
       const snap = reencryptDefinition(JSON.parse(row.snapshot));
       await trx('form_versions').where({ id: row.id }).update({ snapshot: JSON.stringify(snap) });

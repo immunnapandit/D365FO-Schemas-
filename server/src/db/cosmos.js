@@ -5,6 +5,7 @@ import { logger } from '../logger.js';
  * Azure Cosmos DB for NoSQL.
  *
  * Containers (partition key):
+ *   modules       /id      one document per module (sign-in + variables, secrets encrypted)
  *   forms         /id      one document per form (schema definition, secrets encrypted)
  *   formVersions  /formId  one document per saved version
  *   executions    /formId  one document per submission, removed automatically by TTL
@@ -13,6 +14,7 @@ import { logger } from '../logger.js';
  */
 
 export const CONTAINERS = {
+  modules: { id: 'modules', partitionKey: '/id' },
   forms: { id: 'forms', partitionKey: '/id' },
   formVersions: { id: 'formVersions', partitionKey: '/formId' },
   executions: { id: 'executions', partitionKey: '/formId', defaultTtl: -1 }, // TTL on, set per document

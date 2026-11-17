@@ -9,7 +9,7 @@ import addFormats from 'ajv-formats';
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const strMap = (description) => ({ type: 'object', description, additionalProperties: { type: 'string' } });
 
-export const AUTH_TYPES = ['none', 'basic', 'bearer_static', 'api_key', 'oauth2_client_credentials', 'oauth2_password', 'token_endpoint'];
+export const AUTH_TYPES = ['module', 'none', 'basic', 'bearer_static', 'api_key', 'oauth2_client_credentials', 'oauth2_password', 'token_endpoint'];
 export const ICONS = ['document', 'cart', 'invoice', 'customer', 'vendor', 'product', 'warehouse', 'truck', 'ledger', 'project', 'service', 'globe'];
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -46,6 +46,7 @@ export const definitionSchema = {
         type: {
           enum: AUTH_TYPES,
           enumDescriptions: [
+            "Use the module's sign-in (set once for all forms in the module)",
             'No authentication',
             'Basic auth: username + password',
             'A fixed bearer token: token',
@@ -109,6 +110,16 @@ export const definitionSchema = {
         timeoutMs: { type: 'integer', minimum: 1000, maximum: 300000, description: 'Request timeout for this API' },
       },
     },
+    source: {
+      type: 'object',
+      description: 'Set by the OpenAPI import: where this form came from. Used to update the form when the file is imported again.',
+      properties: {
+        format: { type: 'string' },
+        operationId: { type: 'string' },
+        method: { type: 'string' },
+        path: { type: 'string' },
+      },
+    },
     formSchema: {
       type: 'object',
       description: 'Standard JSON Schema for the form fields (type, title, required, enum, default, format…).',
@@ -120,24 +131,69 @@ export const definitionSchema = {
   },
 };
 
+/** A module groups forms in the navigation and holds the sign-in + variables they share. */
+const moduleAuthSchema = (() => {
+  const a = structuredClone(definitionSchema.properties.auth);
+  a.properties.type = { enum: AUTH_TYPES.filter((t) => t !== 'module') };
+  return a;
+})();
+
+export const moduleSchema = {
+  type: 'object',
+  required: ['name', 'auth'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+    version: { type: 'integer' },
+    name: str('Module name, e.g. Sales and marketing or the collection name.', { minLength: 1, maxLength: 60 }),
+    description: str('Optional description.', { maxLength: 2000 }),
+    auth: moduleAuthSchema,
+    headers: {
+      type: 'object',
+      description: 'Headers sent with every request of the module, e.g. Ocp-Apim-Subscription-Key for Azure API Management.',
+      additionalProperties: { type: 'string', maxLength: 4000 },
+    },
+    variables: {
+      type: 'object',
+      description: 'Values for {{name}} placeholders in URLs and sign-in fields, e.g. tenantId.',
+      propertyNames: { pattern: '^[A-Za-z_][\\w-]*$' },
+      additionalProperties: { type: 'string', maxLength: 4000 },
+    },
+    createdAt: { type: 'string' },
+    createdBy: { type: ['string', 'null'] },
+    updatedAt: { type: 'string' },
+    updatedBy: { type: ['string', 'null'] },
+  },
+};
+
 const ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(ajv);
 const validateDefinitionShape = ajv.compile(definitionSchema);
+const validateModuleShape = ajv.compile(moduleSchema);
+
+function readableErrors(errors) {
+  const out = [];
+  for (const e of errors) {
+    if (e.keyword === 'if') continue;
+    const where = e.instancePath ? e.instancePath.slice(1).replace(/\//g, '.') : 'definition';
+    if (e.keyword === 'required') out.push(`${where}: "${e.params.missingProperty}" is required`);
+    else if (e.keyword === 'additionalProperties') out.push(`${where}: unknown property "${e.params.additionalProperty}"`);
+    else if (e.keyword === 'enum') out.push(`${where}: must be one of ${e.params.allowedValues.join(', ')}`);
+    else out.push(`${where}: ${e.message}`);
+  }
+  return [...new Set(out)];
+}
+
+/** Returns a list of readable problems (empty = valid). */
+export function validateModule(mod) {
+  if (!mod || typeof mod !== 'object' || Array.isArray(mod)) return ['The module must be a JSON object.'];
+  return validateModuleShape(mod) ? [] : readableErrors(validateModuleShape.errors);
+}
 
 /** Returns a list of readable problems (empty = valid). */
 export function validateDefinition(def) {
   if (!def || typeof def !== 'object' || Array.isArray(def)) return ['The schema definition must be a JSON object.'];
-  const errors = [];
-  if (!validateDefinitionShape(def)) {
-    for (const e of validateDefinitionShape.errors) {
-      if (e.keyword === 'if') continue;
-      const where = e.instancePath ? e.instancePath.slice(1).replace(/\//g, '.') : 'definition';
-      if (e.keyword === 'required') errors.push(`${where}: "${e.params.missingProperty}" is required`);
-      else if (e.keyword === 'additionalProperties') errors.push(`${where}: unknown property "${e.params.additionalProperty}"`);
-      else if (e.keyword === 'enum') errors.push(`${where}: must be one of ${e.params.allowedValues.join(', ')}`);
-      else errors.push(`${where}: ${e.message}`);
-    }
-  }
+  const errors = validateDefinitionShape(def) ? [] : readableErrors(validateDefinitionShape.errors);
   if (def.formSchema && typeof def.formSchema === 'object') {
     try {
       const check = new Ajv({ strict: false });

@@ -12,7 +12,7 @@ const parse = (s, fallback = null) => {
     return fallback;
   }
 };
-const DEFINITION_KEYS = ['auth', 'api', 'formSchema', 'uiSchema'];
+const DEFINITION_KEYS = ['auth', 'api', 'source', 'formSchema', 'uiSchema'];
 
 function rowToForm(row) {
   return {

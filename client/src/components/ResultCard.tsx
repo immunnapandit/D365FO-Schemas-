@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ExecuteResult } from '../lib/types'
 import Icon from './Icon'
 
@@ -84,6 +85,81 @@ function Json({ title, value }: { title: string; value: unknown }) {
   )
 }
 
+type Row = Record<string, unknown>
+const isRecord = (v: unknown): v is Row => !!v && typeof v === 'object' && !Array.isArray(v)
+const cell = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+const MAX_ROWS = 200
+const MAX_COLS = 30
+
+/** OData collections ({ value: [...] }) and arrays as a table, single records as field / value rows. */
+function rowsOf(value: unknown): { rows: Row[]; total: number } | null {
+  const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.value) ? value.value : null
+  if (!list || !list.every(isRecord)) return null
+  return { rows: list.slice(0, MAX_ROWS) as Row[], total: list.length }
+}
+
+function ResponseTable({ value }: { value: unknown }) {
+  const list = rowsOf(value)
+  if (list) {
+    if (!list.rows.length) return <p className="muted">No records returned.</p>
+    const cols = [...new Set(list.rows.flatMap((r) => Object.keys(r)))].filter((k) => !k.startsWith('@')).slice(0, MAX_COLS)
+    return (
+      <>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+            <tbody>
+              {list.rows.map((r, i) => (
+                <tr key={i}>{cols.map((c) => <td key={c} title={cell(r[c])}>{cell(r[c])}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted small">
+          {list.total > list.rows.length ? `Showing ${list.rows.length} of ${list.total} records.` : `${list.total} record${list.total === 1 ? '' : 's'}.`}
+        </p>
+      </>
+    )
+  }
+  if (isRecord(value)) {
+    const entries = Object.entries(value).filter(([k]) => !k.startsWith('@'))
+    return (
+      <div className="table-scroll">
+        <table className="data-table kv-table">
+          <tbody>
+            {entries.map(([k, v]) => (
+              <tr key={k}><th scope="row">{k}</th><td>{cell(v)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+  return <pre className="plain-pre">{cell(value)}</pre>
+}
+
+function ResponseView({ value, title }: { value: unknown; title: string }) {
+  const [mode, setMode] = useState<'table' | 'json'>('table')
+  if (value === undefined || value === null || value === '') return null
+  const tabular = typeof value === 'object'
+  return (
+    <section className="response-view">
+      <div className="response-head">
+        <h3>{title}</h3>
+        {tabular && (
+          <div className="segmented" role="group" aria-label="Show the response as">
+            <button className={mode === 'table' ? 'on' : ''} aria-pressed={mode === 'table'} onClick={() => setMode('table')}>Table</button>
+            <button className={mode === 'json' ? 'on' : ''} aria-pressed={mode === 'json'} onClick={() => setMode('json')}>JSON</button>
+          </div>
+        )}
+      </div>
+      {tabular && mode === 'table' ? <ResponseTable value={value} /> : (
+        <pre className="json-pre">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</pre>
+      )}
+    </section>
+  )
+}
+
 export default function ResultCard({ result, onClose, authType }: { result: ExecuteResult; onClose?: () => void; authType?: string }) {
   const ok = result.ok
   return (
@@ -106,8 +182,9 @@ export default function ResultCard({ result, onClose, authType }: { result: Exec
 
       <Pipeline result={result} authType={authType} />
 
+      {ok && <ResponseView title="Response" value={result.response} />}
       <Json title="Request sent" value={result.request} />
-      <Json title={ok ? 'Response received' : 'Error response received'} value={result.response} />
+      {!ok && <Json title="Error response received" value={result.response} />}
 
       {!ok && result.requestId && (
         <p className="support-id">

@@ -21,6 +21,7 @@ export interface FormSummary {
 }
 
 export type AuthType =
+  | 'module'
   | 'none'
   | 'basic'
   | 'bearer_static'
@@ -45,6 +46,36 @@ export interface ApiConfig {
   timeoutMs?: number
 }
 
+export interface ModuleDefinition {
+  id?: string
+  version?: number
+  name: string
+  description?: string
+  auth: AuthConfig
+  variables?: Record<string, string>
+  headers?: Record<string, string>
+  createdAt?: string
+  createdBy?: string | null
+  updatedAt?: string
+  updatedBy?: string | null
+}
+
+export interface ImportPreview {
+  moduleName: string
+  moduleExists: boolean
+  auth: { type: AuthType; tokenUrl?: string }
+  authSource: string | null
+  variables: string[]
+  requests: { key: string; name: string; method: string; url: string; fieldCount: number; exists: boolean }[]
+  problems: string[]
+}
+
+export interface ImportResult {
+  module: ModuleDefinition
+  created: { id: string; name: string }[]
+  updated: { id: string; name: string }[]
+}
+
 export interface FormDefinition {
   id?: string
   version?: number
@@ -55,6 +86,7 @@ export interface FormDefinition {
   allowedRoles?: string[]
   auth: AuthConfig
   api: ApiConfig
+  source?: { format?: string; operationId?: string; method?: string; path?: string }
   formSchema: RJSFSchema
   uiSchema?: UiSchema
   createdAt?: string
@@ -84,7 +116,7 @@ export interface ExecuteResult {
 export interface FormVersion {
   id: string
   version: number
-  changeType: 'create' | 'update' | 'delete' | 'restore'
+  changeType: 'create' | 'update' | 'delete' | 'restore' | 'import'
   changedAt: string
   changedBy?: string | null
 }

@@ -7,13 +7,8 @@ export interface Template {
   def: FormDefinition
 }
 
-const entraAuth = {
-  type: 'oauth2_client_credentials' as const,
-  tokenUrl: 'https://login.microsoftonline.com/{{env:FNO_TENANT_ID}}/oauth2/v2.0/token',
-  clientId: '{{env:FNO_CLIENT_ID}}',
-  clientSecret: '{{kv:fno-client-secret}}',
-  scope: '{{env:FNO_BASE_URL}}/.default',
-}
+/** Sign-in is set up once on the module (click the module name in the sidebar). */
+const entraAuth = { type: 'module' as const }
 
 /** Starting points for a new form. Every value can be changed in the designer. */
 export const templates: Template[] = [
