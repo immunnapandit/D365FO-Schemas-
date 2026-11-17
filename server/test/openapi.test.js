@@ -9,7 +9,7 @@ process.env.SQLITE_FILE = ':memory:';
 process.env.AUTH_MODE = 'none';
 process.env.ALLOWED_HOSTS = '127.0.0.1';
 
-const { initDb, closeDb } = await import('../src/db/knex.js');
+const { initDb, closeDb, getDb } = await import('../src/db/knex.js');
 const { createApp } = await import('../src/app.js');
 const { clearTokenCache } = await import('../src/services/outbound-auth.js');
 const { toFormSchema, parseSpec, buildImportPlan } = await import('../src/services/openapi.js');
@@ -131,7 +131,12 @@ test('import: preview, commit, set up sign-in once, run, re-import', async () =>
   assert.equal(preview.requests.length, 2);
   assert.deepEqual(preview.problems, []);
 
-  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true }).expect(201)).body;
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true, fileName: 'fo.yaml' }).expect(201)).body;
+  assert.equal(done.module.spec.fileName, 'fo.yaml');
+  const stored = (await request(app).get(`/api/modules/${done.module.id}/spec`).expect(200)).body;
+  assert.equal(stored.content, content);
+  const raw = await getDb()('modules').where({ id: done.module.id }).first();
+  assert.match(raw.spec, /^enc:v1:/, 'file is stored encrypted');
   assert.equal(done.created.length, 2);
   const mod = done.module;
   assert.deepEqual(mod.variables, { tenantId: '' });
@@ -188,6 +193,12 @@ test('import: preview, commit, set up sign-in once, run, re-import', async () =>
   assert.equal(after.version, 2);
   assert.equal((await request(app).get(`/api/modules/${mod.id}`)).body.version, again.version, 'module sign-in kept');
 
+  // edit the stored YAML in the app and import it again: the form is renamed -> a new form, the old one stays
+  const edited = (await request(app).get(`/api/modules/${mod.id}/spec`)).body.content.replace('summary: Read flaky', 'summary: Read flaky v2');
+  const re2 = (await request(app).post('/api/import/openapi').send({ content: edited, moduleName: 'F&O Integration Test', commit: true }).expect(201)).body;
+  assert.deepEqual(re2.created.map((f) => f.name), ['Read flaky v2']);
+  assert.equal((await request(app).get(`/api/modules/${mod.id}/spec`)).body.content, edited);
+
   // a module with forms cannot be deleted
   await request(app).delete(`/api/modules/${mod.id}`).expect(409);
 
@@ -197,7 +208,7 @@ test('import: preview, commit, set up sign-in once, run, re-import', async () =>
     .send({ ...again, name: 'Sandbox APIs' })
     .expect(200);
   const moved = (await request(app).get('/api/forms').expect(200)).body.filter((f) => f.category === 'Sandbox APIs');
-  assert.equal(moved.length, 2);
+  assert.equal(moved.length, 3);
 });
 
 test('module validation and name clashes', async () => {

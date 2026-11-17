@@ -6,6 +6,7 @@ import { timeAgo } from '../lib/format'
 import AuthFields from './AuthFields'
 import { Pairs, Text } from './inputs'
 import Icon from './Icon'
+import ModuleSpec from './ModuleSpec'
 
 interface Props {
   name: string
@@ -201,6 +202,8 @@ export default function ModulePage({ name, forms, onOpenForm, onChanged, onDelet
             <Pairs label="" keyLabel="Header" valueLabel="Value" value={mod.headers}
               onChange={(v) => change({ ...mod, headers: v ?? {} })} />
           </section>
+
+          {stored && <ModuleSpec module={stored} onImported={async () => { await load(); await onChanged() }} />}
 
           <section className="card-section">
             <h2>Forms in this module</h2>

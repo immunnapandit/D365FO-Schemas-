@@ -1,7 +1,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { cosmosContainer } from '../db/cosmos.js';
 import { conflict, notFound } from '../http-errors.js';
-import { encryptDefinition, restoreMasked } from '../services/secrets.js';
+import { encryptDefinition, restoreMasked, encrypt, decrypt } from '../services/secrets.js';
 import { logger } from '../logger.js';
 
 /**
@@ -237,7 +237,8 @@ export async function rewriteAllSecrets(transform) {
   for await (const page of modules.items.readAll().getAsyncIterator()) {
     for (const doc of page.resources) {
       const { auth, variables, headers } = transform({ auth: doc.auth, variables: doc.variables, headers: doc.headers });
-      await modules.item(doc.id, doc.id).replace({ ...doc, auth, variables, headers });
+      const spec = doc.spec ? encrypt(decrypt(doc.spec)) : doc.spec;
+      await modules.item(doc.id, doc.id).replace({ ...doc, auth, variables, headers, spec });
     }
   }
   for await (const page of versions().items.readAll().getAsyncIterator()) {

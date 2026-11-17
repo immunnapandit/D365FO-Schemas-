@@ -143,3 +143,33 @@ test('cosmos: modules keep secrets encrypted and detect concurrent edits', { ski
   assert.ok(list.some((m) => m.name === 'Cosmos module'));
   await request(app).delete(`/api/modules/${created.id}`).expect(204);
 });
+
+test('cosmos: OpenAPI import keeps the file with the module', { skip }, async () => {
+  const content = `openapi: 3.0.0
+info:
+  title: Cosmos import
+  version: 1.0.0
+paths:
+  /data/SalesOrderHeadersV2:
+    post:
+      summary: Create order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                OrderingCustomerAccountNumber: { type: string }
+      servers:
+        - url: ${up.url}
+`;
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true, fileName: 'c.yaml' }).expect(201)).body;
+  assert.equal(done.created.length, 1);
+  assert.equal(done.module.spec.fileName, 'c.yaml');
+  const spec = (await request(app).get(`/api/modules/${done.module.id}/spec`).expect(200)).body;
+  assert.equal(spec.content, content);
+  const { resource } = await db.cosmosContainer('modules').item(done.module.id, done.module.id).read();
+  assert.match(resource.spec, /^enc:v1:/);
+  const list = (await request(app).get('/api/modules').expect(200)).body;
+  assert.equal(list.find((m) => m.id === done.module.id).spec.fileName, 'c.yaml');
+});

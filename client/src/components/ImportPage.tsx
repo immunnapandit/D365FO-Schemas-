@@ -69,7 +69,7 @@ export default function ImportPage({ onDone, onCancel }: Props) {
     setBusy('import')
     setErrors([])
     try {
-      const r = await api.runImport(content, moduleName.trim(), [...selected])
+      const r = await api.runImport(content, moduleName.trim(), [...selected], fileName ?? undefined)
       const parts = [
         r.created.length ? `${r.created.length} form${r.created.length === 1 ? '' : 's'} created` : '',
         r.updated.length ? `${r.updated.length} updated` : '',

@@ -54,9 +54,18 @@ export interface ModuleDefinition {
   auth: AuthConfig
   variables?: Record<string, string>
   headers?: Record<string, string>
+  /** set when the module was imported from an OpenAPI file */
+  spec?: { fileName?: string; updatedAt: string; updatedBy?: string | null }
   createdAt?: string
   createdBy?: string | null
   updatedAt?: string
+  updatedBy?: string | null
+}
+
+export interface ModuleSpec {
+  content: string
+  fileName?: string
+  updatedAt: string
   updatedBy?: string | null
 }
 

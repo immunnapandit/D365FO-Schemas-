@@ -10,6 +10,7 @@ import type {
   ImportPreview,
   ImportResult,
   ModuleDefinition,
+  ModuleSpec,
 } from './types'
 
 export class ApiError extends Error {
@@ -108,6 +109,7 @@ export const api = {
 
   previewImport: (content: string, moduleName?: string) =>
     request<ImportPreview>('/api/import/openapi', post({ content, moduleName: moduleName || undefined })),
-  runImport: (content: string, moduleName: string, include: string[]) =>
-    request<ImportResult>('/api/import/openapi', post({ content, moduleName, include, commit: true })),
+  runImport: (content: string, moduleName: string, include?: string[], fileName?: string) =>
+    request<ImportResult>('/api/import/openapi', post({ content, moduleName, include, commit: true, fileName })),
+  getModuleSpec: (id: string) => request<ModuleSpec>(`/api/modules/${enc(id)}/spec`),
 }

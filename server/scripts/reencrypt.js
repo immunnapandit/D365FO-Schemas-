@@ -10,7 +10,7 @@ import { config, validateConfig } from '../src/config.js';
 import { initDb, closeDb, usesCosmos } from '../src/db/index.js';
 import { getDb } from '../src/db/knex.js';
 import { rewriteAllSecrets } from '../src/repositories/cosmos-forms.js';
-import { reencryptDefinition } from '../src/services/secrets.js';
+import { reencryptDefinition, encrypt, decrypt } from '../src/services/secrets.js';
 import { logger } from '../src/logger.js';
 
 const { errors } = validateConfig();
@@ -36,9 +36,10 @@ if (usesCosmos()) {
       await trx('forms').where({ id: row.id }).update({ definition: JSON.stringify(def) });
       forms += 1;
     }
-    for (const row of await trx('modules').select('id', 'definition')) {
+    for (const row of await trx('modules').select('id', 'definition', 'spec')) {
       const def = reencryptDefinition(JSON.parse(row.definition));
-      await trx('modules').where({ id: row.id }).update({ definition: JSON.stringify(def) });
+      const spec = row.spec ? encrypt(decrypt(row.spec)) : row.spec;
+      await trx('modules').where({ id: row.id }).update({ definition: JSON.stringify(def), spec });
     }
     for (const row of await trx('form_versions').select('id', 'snapshot')) {
       const snap = reencryptDefinition(JSON.parse(row.snapshot));

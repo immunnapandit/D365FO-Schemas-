@@ -11,3 +11,5 @@ export const getModuleByName = (...a) => impl().getModuleByName(...a);
 export const createModule = (...a) => impl().createModule(...a);
 export const updateModule = (...a) => impl().updateModule(...a);
 export const deleteModule = (...a) => impl().deleteModule(...a);
+export const getModuleSpec = (...a) => impl().getModuleSpec(...a);
+export const setModuleSpec = (...a) => impl().setModuleSpec(...a);

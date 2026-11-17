@@ -1,6 +1,6 @@
 import { cosmosContainer } from '../db/cosmos.js';
 import { notFound, conflict } from '../http-errors.js';
-import { encryptDefinition, restoreMasked } from '../services/secrets.js';
+import { encryptDefinition, restoreMasked, encrypt, decrypt } from '../services/secrets.js';
 import { now, slug, sameName, staleConflict, nameTaken } from './module-common.js';
 
 const modules = () => cosmosContainer('modules');
@@ -14,6 +14,7 @@ function docToModule(d) {
     variables: d.variables ?? {},
     headers: d.headers ?? {},
     version: Number(d.version),
+    spec: d.specUpdatedAt ? { fileName: d.specFileName ?? undefined, updatedAt: d.specUpdatedAt, updatedBy: d.specUpdatedBy } : undefined,
     createdAt: d.createdAt,
     createdBy: d.createdBy,
     updatedAt: d.updatedAt,
@@ -28,7 +29,10 @@ async function readDoc(id) {
 
 export async function listModules() {
   const { resources } = await modules()
-    .items.query('SELECT * FROM c WHERE c.isDeleted = false ORDER BY c.name')
+    .items.query(
+      'SELECT c.id, c.name, c.description, c.auth, c.variables, c.headers, c.version, c.specFileName, c.specUpdatedAt, c.specUpdatedBy, ' +
+        'c.createdAt, c.createdBy, c.updatedAt, c.updatedBy FROM c WHERE c.isDeleted = false ORDER BY c.name',
+    )
     .fetchAll();
   return resources.map(docToModule);
 }
@@ -111,4 +115,19 @@ export async function deleteModule(id, user) {
   await modules()
     .item(id, id)
     .replace({ ...current, isDeleted: true, updatedAt: now(), updatedBy: user?.name ?? null });
+}
+
+/** The OpenAPI file of the module (stored encrypted: exports can contain example secrets). */
+export async function getModuleSpec(id) {
+  const d = await readDoc(id);
+  if (!d?.spec) return null;
+  return { content: decrypt(d.spec), fileName: d.specFileName ?? undefined, updatedAt: d.specUpdatedAt, updatedBy: d.specUpdatedBy };
+}
+
+export async function setModuleSpec(id, { content, fileName }, user) {
+  const current = await readDoc(id);
+  if (!current) throw notFound('Module not found');
+  await modules()
+    .item(id, id)
+    .replace({ ...current, spec: encrypt(content), specFileName: fileName ?? null, specUpdatedAt: now(), specUpdatedBy: user?.name ?? null });
 }

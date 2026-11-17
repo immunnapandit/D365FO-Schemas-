@@ -18,9 +18,10 @@ interface Props {
   onChange: (value: string) => void
   /** JSON Schema of a schema definition (from the server) for autocomplete + validation */
   schema?: object | null
+  language?: 'json' | 'yaml'
 }
 
-export default function JsonEditor({ value, onChange, schema }: Props) {
+export default function JsonEditor({ value, onChange, schema, language = 'json' }: Props) {
   useEffect(() => {
     monaco.json.jsonDefaults.setDiagnosticsOptions({
       validate: true,
@@ -32,7 +33,7 @@ export default function JsonEditor({ value, onChange, schema }: Props) {
 
   return (
     <Editor
-      language="json"
+      language={language}
       value={value}
       onChange={(v) => onChange(v ?? '')}
       theme="vs"
@@ -43,7 +44,7 @@ export default function JsonEditor({ value, onChange, schema }: Props) {
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: 'on',
-        formatOnPaste: true,
+        formatOnPaste: language === 'json',
         unicodeHighlight: { ambiguousCharacters: false },
       }}
     />

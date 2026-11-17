@@ -23,7 +23,7 @@ router.use(requireAdmin);
 function moduleFromBody(body) {
   if (!body || typeof body !== 'object') throw badRequest('Request body must be a JSON object');
   // eslint-disable-next-line no-unused-vars
-  const { id, createdAt, createdBy, updatedAt, updatedBy, version, ...mod } = body;
+  const { id, createdAt, createdBy, updatedAt, updatedBy, version, spec, ...mod } = body;
   mod.variables ??= {};
   mod.headers ??= {};
   const problems = validateModule(mod);
@@ -104,6 +104,23 @@ router.delete(
   }),
 );
 
+/** The OpenAPI file the module was imported from (admins view, edit and re-import it). */
+router.get(
+  '/:id/spec',
+  wrap(async (req, res) => {
+    const mod = await modules.getModule(req.params.id);
+    if (!mod) throw notFound('Module not found');
+    let spec;
+    try {
+      spec = await modules.getModuleSpec(mod.id);
+    } catch {
+      throw new HttpError(500, 'The stored file could not be decrypted. Was SECRET_ENCRYPTION_KEY changed?', [], 'decrypt_failed');
+    }
+    if (!spec) throw notFound('This module was not imported from a file.');
+    res.json(spec);
+  }),
+);
+
 /** Gets a token with the module's sign-in, so the admin knows it works before anyone submits. */
 router.post(
   '/:id/test-auth',
@@ -118,6 +135,8 @@ router.post(
 export default router;
 
 /* ---------------- OpenAPI import ---------------- */
+
+const MAX_SPEC_CHARS = 1_500_000; // stays well below the Cosmos DB item limit (2 MB)
 
 export const importRouter = Router();
 importRouter.use(requireAdmin);
@@ -137,7 +156,8 @@ function stripOrder(uiSchema) {
 importRouter.post(
   '/openapi',
   wrap(async (req, res) => {
-    const { content, moduleName, include, commit } = req.body ?? {};
+    const { content, moduleName, include, commit, fileName } = req.body ?? {};
+    if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 1.5 MB).');
     let plan;
     try {
       plan = buildImportPlan(parseSpec(content), { moduleName });
@@ -230,8 +250,10 @@ importRouter.post(
         created.push({ id: f.id, name: f.name });
       }
     }
+    // keep the file with the module, so it can be viewed, edited and imported again later
+    await modules.setModuleSpec(mod.id, { content, fileName: typeof fileName === 'string' ? fileName.slice(0, 200) : undefined }, req.user);
     clearTokenCache();
     req.log.info({ moduleId: mod.id, created: created.length, updated: updated.length }, 'OpenAPI imported');
-    res.status(201).json({ module: maskDefinition(mod), created, updated });
+    res.status(201).json({ module: maskDefinition((await modules.getModule(mod.id)) ?? mod), created, updated });
   }),
 );
