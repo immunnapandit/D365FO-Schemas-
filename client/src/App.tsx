@@ -164,7 +164,7 @@ export default function App() {
                 </div>
                 {user.isAdmin && (
                   <div className="actions">
-                    <button className="btn" onClick={() => setView({ kind: 'import' })}><Icon name="upload" size={16} /> Import OpenAPI</button>
+                    <button className="btn" onClick={() => setView({ kind: 'import' })}><Icon name="upload" size={16} /> Import collection</button>
                     <button className="btn btn-primary" onClick={() => newForm()}><Icon name="plus" size={16} /> New form</button>
                   </div>
                 )}

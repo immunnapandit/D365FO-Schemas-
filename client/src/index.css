@@ -399,3 +399,5 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .spec-preview { margin-top: 14px; }
 .spec-preview .plain-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .card-section .form-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.var-chip.var-empty { background: transparent; border: 1px dashed var(--line); color: var(--ink-soft); }

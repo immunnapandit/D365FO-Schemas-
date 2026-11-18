@@ -12,8 +12,20 @@ interface Props {
 
 const MAX_BYTES = 5 * 1024 * 1024
 
+const FIELD_LABELS: Record<string, string> = {
+  tokenUrl: 'token URL',
+  clientId: 'client ID',
+  clientSecret: 'client secret',
+  scope: 'scope',
+  username: 'username',
+  password: 'password',
+  token: 'token',
+  headerName: 'header name',
+  value: 'key',
+}
+
 /**
- * Import an OpenAPI file (YAML or JSON), e.g. a Postman collection exported as OpenAPI.
+ * Import a Postman collection (exported JSON) or an OpenAPI file (YAML or JSON).
  * The collection becomes a module; each request becomes a form. The token request becomes
  * the module's sign-in.
  */
@@ -98,10 +110,11 @@ export default function ImportPage({ onDone, onCancel }: Props) {
     <div className="page">
       <header className="page-head">
         <div className="page-title">
-          <h1>Import from OpenAPI</h1>
+          <h1>Import a collection</h1>
           <p className="lede">
-            In Postman, export the collection as OpenAPI (YAML or JSON) and import it here. The collection becomes a module and
-            each request becomes a form. You set up the sign-in once on the module.
+            Import a Postman collection (Export collection, JSON) or an OpenAPI file (YAML or JSON). The collection becomes a
+            module and each request becomes a form. The collection's sign-in and variables are taken over; you add what is
+            missing, such as the secret, once on the module.
           </p>
         </div>
         <div className="actions">
@@ -126,7 +139,7 @@ export default function ImportPage({ onDone, onCancel }: Props) {
           </label>
           <input id={fileId} className="sr-only" type="file" accept=".yaml,.yml,.json,application/json,application/yaml,text/yaml"
             onChange={(e) => void readFile(e.target.files?.[0])} />
-          <span className="muted">{fileName ?? 'YAML or JSON, up to 5 MB'}</span>
+          <span className="muted">{fileName ?? 'Postman collection (.json) or OpenAPI (.yaml, .yml, .json), up to 5 MB'}</span>
         </div>
         <details className="paste-box" open={!fileName && !!content}>
           <summary>Or paste the content</summary>
@@ -163,15 +176,27 @@ export default function ImportPage({ onDone, onCancel }: Props) {
                 <p>{authLabel}</p>
                 {preview.auth.tokenUrl && <p className="mono small break">{preview.auth.tokenUrl}</p>}
                 <p className="field-hint">
-                  {preview.authSource
-                    ? 'The token request is not a form. You fill in client ID, secret and scope once on the module.'
-                    : 'No token request was found. Set the sign-in on the module after the import.'}
+                  {!preview.authSource
+                    ? 'No sign-in was found. Set it on the module after the import.'
+                    : preview.auth.filled?.length
+                      ? `Taken from the ${preview.authSource === 'collection' ? "collection's Authorization" : 'token request'}: ${preview.auth.filled.map((k) => FIELD_LABELS[k] ?? k).join(', ')}. Fill in anything missing on the module.`
+                      : 'The token request is not a form. Fill in client ID, secret and scope once on the module.'}
                 </p>
               </div>
               {!!preview.variables.length && (
                 <div className="field field-wide">
-                  <span className="field-label">Variables to fill in on the module</span>
-                  <p>{preview.variables.map((v) => <code key={v} className="var-chip">{`{{${v}}}`}</code>)}</p>
+                  <span className="field-label">Variables</span>
+                  <p>
+                    {preview.variables.map((v) => (
+                      <code key={v} className={`var-chip ${preview.variablesWithValue?.includes(v) ? '' : 'var-empty'}`}
+                        title={preview.variablesWithValue?.includes(v) ? 'Value taken from the file' : 'No value in the file: fill it in on the module'}>
+                        {`{{${v}}}`}
+                      </code>
+                    ))}
+                  </p>
+                  {preview.variables.some((v) => !preview.variablesWithValue?.includes(v)) && (
+                    <p className="field-hint">Outlined variables have no value in the file. Fill them in on the module after the import.</p>
+                  )}
                 </div>
               )}
             </div>

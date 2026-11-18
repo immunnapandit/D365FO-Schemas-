@@ -40,7 +40,7 @@ export default function Sidebar({ forms, selectedId, loading, user, onSelect, on
           <button className="btn btn-primary new-btn" onClick={onNew}>
             <Icon name="plus" size={16} /> New form
           </button>
-          <button className="btn import-btn" onClick={onImport} title="Import a Postman collection exported as OpenAPI">
+          <button className="btn import-btn" onClick={onImport} title="Import a Postman collection or an OpenAPI (YAML) file">
             <Icon name="upload" size={16} /> Import
           </button>
         </div>

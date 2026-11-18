@@ -104,7 +104,6 @@ test('OpenAPI schema is turned into a form schema', () => {
 });
 
 test('clear messages for files that are not OpenAPI 3', () => {
-  assert.throws(() => parseSpec('{"info":{"_postman_id":"x"},"item":[]}'), /export the collection as "OpenAPI"/);
   assert.throws(() => parseSpec('swagger: "2.0"\npaths: {}'), /Swagger 2.0/);
   assert.throws(() => parseSpec('just: text'), /openapi: 3/);
   assert.throws(() => parseSpec('openapi: 3.0.0\n  bad: [indent'), /not valid YAML/);

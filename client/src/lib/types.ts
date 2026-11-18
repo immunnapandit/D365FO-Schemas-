@@ -72,9 +72,11 @@ export interface ModuleSpec {
 export interface ImportPreview {
   moduleName: string
   moduleExists: boolean
-  auth: { type: AuthType; tokenUrl?: string }
+  format?: 'openapi' | 'postman'
+  auth: { type: AuthType; tokenUrl?: string; filled?: string[] }
   authSource: string | null
   variables: string[]
+  variablesWithValue?: string[]
   requests: { key: string; name: string; method: string; url: string; fieldCount: number; exists: boolean }[]
   problems: string[]
 }

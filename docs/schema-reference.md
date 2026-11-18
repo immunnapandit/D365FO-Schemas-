@@ -193,3 +193,16 @@ What the import does:
   built from the example. `@odata.*` and read-only properties are left out.
 - Importing the same file again updates the forms with the same name (a new version each) instead of adding copies.
   The module's sign-in is kept.
+
+### Import a Postman collection
+
+The import also accepts a Postman collection exported with **Export collection** (v2.0 / v2.1 JSON):
+
+- The collection's **Authorization** (OAuth 2.0 client credentials or password, basic, bearer, API key) becomes the
+  module's sign-in, with the values in the file (token URL, client ID, scope…). A "Get token" request is used instead
+  when the collection has no Authorization.
+- **Collection variables** (`{{baseUrl}}`, `{{tenantId}}`…) become module variables, with their values. Postman exports
+  initial values only, so a secret typed as a current value is not in the file: fill it in on the module.
+- Each request becomes a form. The raw JSON body becomes the fields, and its sample values become default values
+  (values that are `{{variables}}` stay empty). Folders are flattened. `:name` path variables become fields.
+- Re-importing never overwrites a value already set on the module; it only fills empty ones.

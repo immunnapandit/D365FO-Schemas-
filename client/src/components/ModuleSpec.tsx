@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * The OpenAPI file (YAML or JSON) a module was imported from: view it, edit it, check what would change
+ * The file (Postman collection or OpenAPI YAML/JSON) a module was imported from: view it, edit it, check what would change
  * and update the forms from it. Like importing again, without going back to Postman.
  */
 export default function ModuleSpec({ module: mod, onImported }: Props) {
@@ -108,8 +108,8 @@ export default function ModuleSpec({ module: mod, onImported }: Props) {
   if (!spec) {
     return (
       <section className="card-section">
-        <h2>OpenAPI file</h2>
-        <p className="muted">This module was not imported from a file. Use Import in the sidebar to add requests from a Postman collection exported as OpenAPI.</p>
+        <h2>Imported file</h2>
+        <p className="muted">This module was not imported from a file. Use Import in the sidebar to add requests from a Postman collection or an OpenAPI (YAML) file.</p>
       </section>
     )
   }
@@ -118,7 +118,7 @@ export default function ModuleSpec({ module: mod, onImported }: Props) {
     <section className="card-section">
       <div className="section-head">
         <div>
-          <h2>OpenAPI file</h2>
+          <h2>Imported file</h2>
           <p className="muted small">
             {spec.fileName ? <strong>{spec.fileName}</strong> : 'Imported file'}, changed{' '}
             <span title={fullDate(spec.updatedAt)}>{timeAgo(spec.updatedAt)}</span>

@@ -7,7 +7,7 @@ import { validateModule, validateDefinition } from '../services/definition-schem
 import { containsMask, decryptDefinition, maskDefinition } from '../services/secrets.js';
 import { testAuth } from '../services/executor.js';
 import { clearTokenCache } from '../services/outbound-auth.js';
-import { parseSpec, buildImportPlan, ImportError } from '../services/openapi.js';
+import { planFromContent, ImportError } from '../services/import-plan.js';
 import { sameName } from '../repositories/module-common.js';
 
 /**
@@ -160,7 +160,7 @@ importRouter.post(
     if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 1.5 MB).');
     let plan;
     try {
-      plan = buildImportPlan(parseSpec(content), { moduleName });
+      plan = planFromContent(content, { moduleName });
     } catch (e) {
       if (e instanceof ImportError) throw badRequest(e.message);
       throw e;
@@ -180,9 +180,16 @@ importRouter.post(
       return res.json({
         moduleName: plan.moduleName,
         moduleExists: Boolean(existingModule),
-        auth: { type: plan.auth.type, ...(plan.auth.tokenUrl ? { tokenUrl: plan.auth.tokenUrl } : {}) },
+        format: plan.format,
+        auth: {
+          type: plan.auth.type,
+          ...(plan.auth.tokenUrl ? { tokenUrl: plan.auth.tokenUrl } : {}),
+          // which sign-in fields have a value in the file (values themselves are not sent back)
+          filled: Object.keys(plan.auth).filter((k) => k !== 'type' && plan.auth[k]),
+        },
         authSource: plan.authSource,
         variables: plan.variables,
+        variablesWithValue: plan.variables.filter((v) => plan.variableValues?.[v]),
         requests: plan.requests.map((r) => ({
           key: r.key,
           name: r.name,
@@ -198,26 +205,25 @@ importRouter.post(
     if (!selected.length) throw badRequest('Choose at least one request to import.');
     if (problems.length) throw badRequest('Some requests could not be turned into forms', problems);
 
-    // 1) module: create it, or add new variables / a sign-in it does not have yet
+    // 1) module: create it with the sign-in and variables from the file, or fill in what an existing module lacks.
+    //    Values already set on the module are never overwritten by the file.
+    const fileVars = Object.fromEntries(plan.variables.map((v) => [v, plan.variableValues?.[v] ?? '']));
     let mod = existingModule;
     if (!mod) {
-      mod = await modules.createModule(
-        { name: plan.moduleName, auth: plan.auth, variables: Object.fromEntries(plan.variables.map((v) => [v, ''])) },
-        req.user,
-      );
+      mod = await modules.createModule({ name: plan.moduleName, auth: plan.auth, variables: fileVars }, req.user);
     } else {
-      const missing = plan.variables.filter((v) => !(v in (mod.variables ?? {})));
-      const noAuth = (!mod.auth || mod.auth.type === 'none') && plan.auth.type !== 'none';
-      if (missing.length || noAuth) {
+      const variables = { ...mod.variables };
+      for (const [k, v] of Object.entries(fileVars)) if (!variables[k]) variables[k] = v;
+      let auth = mod.auth;
+      if ((!auth || auth.type === 'none') && plan.auth.type !== 'none') auth = plan.auth;
+      else if (auth?.type === plan.auth.type) {
+        auth = { ...auth };
+        for (const [k, v] of Object.entries(plan.auth)) if (v && !auth[k]) auth[k] = v;
+      }
+      if (JSON.stringify(variables) !== JSON.stringify(mod.variables ?? {}) || JSON.stringify(auth) !== JSON.stringify(mod.auth)) {
         mod = await modules.updateModule(
           mod.id,
-          {
-            name: mod.name,
-            description: mod.description,
-            auth: noAuth ? plan.auth : mod.auth,
-            variables: { ...mod.variables, ...Object.fromEntries(missing.map((v) => [v, ''])) },
-            headers: mod.headers,
-          },
+          { name: mod.name, description: mod.description, auth, variables, headers: mod.headers },
           mod.version,
           req.user,
         );

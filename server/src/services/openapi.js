@@ -19,7 +19,8 @@ const DROP_KEYS = new Set(['example', 'examples', 'xml', 'externalDocs', 'discri
 
 /* ---------------- parsing ---------------- */
 
-export function parseSpec(content) {
+/** YAML or JSON text -> object. */
+export function parseText(content) {
   if (typeof content !== 'string' || !content.trim()) throw new ImportError('The file is empty.');
   let doc;
   try {
@@ -27,7 +28,12 @@ export function parseSpec(content) {
   } catch (e) {
     throw new ImportError(`The file is not valid YAML or JSON: ${e.message}`);
   }
-  if (!doc || typeof doc !== 'object') throw new ImportError('The file is not an OpenAPI document.');
+  if (!doc || typeof doc !== 'object') throw new ImportError('The file is not an OpenAPI document or a Postman collection.');
+  return doc;
+}
+
+export function parseSpec(content) {
+  const doc = typeof content === 'string' ? parseText(content) : content;
   if (doc.info?._postman_id || String(doc.info?.schema ?? '').includes('getpostman')) {
     throw new ImportError('This is a Postman collection file. In Postman, export the collection as "OpenAPI" (YAML or JSON) and import that file.');
   }
