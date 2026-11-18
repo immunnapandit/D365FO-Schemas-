@@ -191,3 +191,26 @@ test('re-import fills only empty sign-in fields of an existing module', async ()
   assert.equal(done.module.auth.clientId, 'mine');
   assert.equal(done.module.auth.scope, 'api://x/.default', 'empty field filled from the file');
 });
+
+test('incomplete or wrong sign-in gives a clear message', async () => {
+  const content = JSON.stringify({ ...collection(up.url), info: { ...collection(up.url).info, name: 'Sign-in errors' } });
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true }).expect(201)).body;
+  const mod = done.module;
+
+  // the variable for the secret is empty
+  let t = (await request(app).post(`/api/modules/${mod.id}/test-auth`).expect(200)).body;
+  assert.equal(t.ok, false);
+  assert.match(t.message, /clientSecret/);
+
+  // the secret is wrong
+  await request(app)
+    .put(`/api/modules/${mod.id}`)
+    .send({ ...mod, variables: { ...mod.variables, clientSecret: 'wrong' } })
+    .expect(200);
+  clearTokenCache();
+  t = (await request(app).post(`/api/modules/${mod.id}/test-auth`).expect(200)).body;
+  assert.equal(t.ok, false);
+  assert.equal(t.stage, 'auth');
+  assert.match(t.message, /^Sign-in failed: The client secret is wrong/);
+  assert.ok(t.details.includes('Error code: AADSTS7000215'));
+});

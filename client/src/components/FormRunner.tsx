@@ -117,7 +117,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
           <div className="actions">
             {authType !== 'none' && (
               <button className="btn" onClick={testConnection} disabled={testing}>
-                {testing ? 'Testing…' : 'Test sign-in'}
+                {testing ? 'Testing…' : 'Test authentication'}
               </button>
             )}
             <button className="btn" onClick={() => onDuplicate(def)}>Duplicate</button>
@@ -138,8 +138,8 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
       {test && (
         <div className={`banner ${test.ok ? 'banner-ok' : 'banner-error'}`} role="status">
           <div>
-            <strong>{test.ok ? 'Sign-in works' : 'Sign-in failed'}</strong>
-            <p>{test.ok ? 'A token was issued by the target system.' : test.message}</p>
+            <strong>{test.ok ? 'Authentication works' : 'Authentication failed'}</strong>
+            <p>{test.ok ? 'A token was received from the target system. No request was sent to the API.' : test.message.replace(/^Sign-in failed: /, '')}</p>
             {!!test.details?.length && <ul>{test.details.map((d, i) => <li key={i}>{d}</li>)}</ul>}
           </div>
           <button className="icon-btn" onClick={() => setTest(null)} aria-label="Dismiss"><Icon name="x" size={16} /></button>

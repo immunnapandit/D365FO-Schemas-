@@ -181,7 +181,8 @@ test('wrong client secret is reported as an authentication failure', async () =>
     .expect(200);
   const res = await request(app).post(`/api/forms/${formId}/execute`).send({ formData: { customer: 'X' } }).expect(200);
   assert.equal(res.body.stage, 'auth');
-  assert.match(res.body.message, /AADSTS7000215/);
+  assert.match(res.body.message, /^Sign-in failed: The client secret is wrong/);
+  assert.ok(res.body.details.includes('Error code: AADSTS7000215'));
 
   const t = await request(app).post(`/api/forms/${formId}/test-auth`).expect(200);
   assert.equal(t.body.ok, false);
@@ -271,7 +272,8 @@ test('oauth2_password: signs in with a service account, password is encrypted an
     .expect(200);
   const bad = await request(app).post(`/api/forms/${created.id}/execute`).send({ formData: { customer: 'US-1' } }).expect(200);
   assert.equal(bad.body.stage, 'auth');
-  assert.match(bad.body.message, /AADSTS50126/);
+  assert.match(bad.body.message, /username or password is wrong/);
+  assert.ok(bad.body.details.includes('Error code: AADSTS50126'));
 });
 
 test('category and icon are stored, listed and validated', async () => {
@@ -282,4 +284,15 @@ test('category and icon are stored, listed and validated', async () => {
   assert.equal(listed.category, 'Procurement');
   assert.equal(listed.icon, 'vendor');
   await request(app).post('/api/forms').send({ ...def, name: 'Bad icon', icon: 'nope' }).expect(400);
+});
+
+test('when the API host does not answer, the result says sign-in worked and the API call failed', async () => {
+  const def = salesOrderDefinition(up.url, { name: 'Unreachable API' });
+  def.api.url = 'http://127.0.0.1:1/data/SalesOrderHeadersV2';
+  const created = (await request(app).post('/api/forms').send(def).expect(201)).body;
+  clearTokenCache();
+  const res = await request(app).post(`/api/forms/${created.id}/execute`).send({ formData: { customer: 'X' } }).expect(200);
+  assert.equal(res.body.stage, 'network');
+  assert.match(res.body.message, /Could not reach 127\.0\.0\.1:1/);
+  assert.equal(res.body.auth.type, 'oauth2_client_credentials', 'sign-in info is included');
 });

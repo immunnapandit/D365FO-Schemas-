@@ -71,3 +71,72 @@ export function normalizeApiError(status, body) {
     details: details.filter((d) => d && d !== message),
   };
 }
+
+/* ---------------- sign-in (token) errors ---------------- */
+
+/** Microsoft Entra ID error codes -> what the admin should do. */
+const AADSTS_HINTS = {
+  7000215: 'The client secret is wrong. Use the secret value (not the secret ID) from the app registration.',
+  7000222: 'The client secret has expired. Create a new secret in the app registration and update the sign-in.',
+  700016: 'The client ID was not found in this tenant. Check the client ID and the tenant ID.',
+  90002: 'The tenant was not found. Check the tenant ID.',
+  900023: 'The tenant ID is not valid. Check the tenant ID.',
+  90013: 'The tenant ID is missing in the token URL. Check the tenant ID.',
+  500011: 'The scope points to an API that is not known in this tenant. Check the scope, e.g. https://<environment>.operations.dynamics.com/.default.',
+  70011: 'The scope is not valid. For client credentials it must end with /.default.',
+  1002012: 'The scope is not valid. For client credentials it must end with /.default.',
+  900144: 'A required value is missing in the sign-in (client ID, secret, scope or grant type).',
+  7000218: 'The client secret is missing. Fill it in on the sign-in.',
+  50126: 'The username or password is wrong.',
+  50034: 'The user does not exist in this tenant.',
+  50076: 'The account needs multi-factor authentication, which this sign-in type cannot do. Use a service account or client credentials.',
+  50079: 'The account needs multi-factor authentication, which this sign-in type cannot do. Use a service account or client credentials.',
+  65001: 'The app has no consent for this API. An admin must grant consent in Entra ID.',
+  700024: 'The client assertion is not valid. Check the app credentials.',
+  53003: 'Access was blocked by a Conditional Access policy.',
+};
+
+/** Generic OAuth 2.0 error codes (RFC 6749) -> what the admin should do. */
+const OAUTH_HINTS = {
+  invalid_client: 'The client ID or client secret was rejected.',
+  unauthorized_client: 'This app is not allowed to use this sign-in type.',
+  invalid_scope: 'The scope is not valid.',
+  invalid_grant: 'The username/password or grant was rejected.',
+  invalid_request: 'The sign-in request is missing a value or has a wrong value.',
+  unsupported_grant_type: 'This sign-in type is not supported by the token URL.',
+};
+
+/**
+ * Turns a failed token response into a short, clear message plus details for support.
+ * Example: "Sign-in failed: The client secret is wrong. …" with details
+ * ["Microsoft: AADSTS7000215: Invalid client secret provided.", "Error code: AADSTS7000215", "Trace ID: …"].
+ */
+export function explainTokenError(status, body) {
+  const n = normalizeApiError(status, body);
+  const text = typeof body === 'object' && body ? String(body.error_description || n.message || '') : String(n.message || '');
+  const aad = text.match(/AADSTS(\d+)/);
+  const codes = Array.isArray(body?.error_codes) ? body.error_codes : [];
+  const aadCode = aad ? Number(aad[1]) : codes[0];
+  const firstSentence = text.split(/\r?\n/)[0].replace(/\s*Trace ID:.*$/i, '').trim();
+
+  let hint = aadCode && AADSTS_HINTS[aadCode];
+  if (!hint && n.code && OAUTH_HINTS[n.code]) hint = OAUTH_HINTS[n.code];
+  if (!hint && status === 404) hint = 'The token URL was not found (HTTP 404). Check the token URL.';
+  if (!hint && status >= 500) hint = `The sign-in server had an error (HTTP ${status}). Try again in a moment.`;
+
+  const details = [];
+  if (hint && firstSentence) details.push(`Message from the sign-in server: ${firstSentence}`);
+  if (aadCode) details.push(`Error code: AADSTS${aadCode}`);
+  else if (n.code) details.push(`Error code: ${n.code}`);
+  const trace = text.match(/Trace ID:\s*([\w-]+)/i)?.[1] || body?.trace_id;
+  const corr = text.match(/Correlation ID:\s*([\w-]+)/i)?.[1] || body?.correlation_id;
+  if (trace) details.push(`Trace ID: ${trace}`);
+  if (corr) details.push(`Correlation ID: ${corr}`);
+  for (const d of n.details) if (!details.includes(d)) details.push(d);
+
+  return {
+    message: `Sign-in failed: ${hint || firstSentence || `HTTP ${status}`}`,
+    details,
+    code: aadCode ? `AADSTS${aadCode}` : n.code,
+  };
+}

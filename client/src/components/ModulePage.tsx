@@ -133,7 +133,7 @@ export default function ModulePage({ name, forms, onOpenForm, onChanged, onDelet
         <div className="actions">
           {stored?.id && (
             <button className="btn" onClick={() => void runTest()} disabled={testing || dirty} title={dirty ? 'Save first' : undefined}>
-              {testing ? <span className="spinner" /> : <Icon name="key" size={16} />} Test sign-in
+              {testing ? <span className="spinner" /> : <Icon name="key" size={16} />} Test authentication
             </button>
           )}
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving || loading || (!dirty && !!stored)}>
@@ -160,7 +160,7 @@ export default function ModulePage({ name, forms, onOpenForm, onChanged, onDelet
       {test && (
         <div className={`banner ${test.ok ? 'banner-ok' : 'banner-error'}`} role={test.ok ? 'status' : 'alert'}>
           <div>
-            {test.ok ? 'Sign-in works. A token was received.' : test.message}
+            {test.ok ? 'Authentication works. A token was received. No request was sent to the API.' : test.message}
             {!!test.details?.length && <ul>{test.details.map((d, i) => <li key={i}>{d}</li>)}</ul>}
           </div>
         </div>

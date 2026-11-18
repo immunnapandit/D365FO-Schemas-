@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { resolveDeep } from './template.js';
 import { httpRequest } from './http.js';
-import { StageError, normalizeApiError } from './errors.js';
+import { StageError, explainTokenError } from './errors.js';
 import { AUTH_TYPES } from './definition-schema.js';
 
 /**
@@ -32,10 +32,27 @@ function getPath(obj, path) {
   return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);
 }
 
+const FIELD_LABELS = {
+  tokenUrl: 'token URL',
+  clientId: 'client ID',
+  clientSecret: 'client secret',
+  scope: 'scope',
+  username: 'username',
+  password: 'password',
+  token: 'token',
+  headerName: 'header name',
+  value: 'key value',
+  url: 'login URL',
+};
+
 function requireFields(cfg, fields, type) {
   const missing = fields.filter((f) => cfg[f] === undefined || cfg[f] === '');
   if (missing.length) {
-    throw new StageError('config', `auth (${type}) is missing: ${missing.join(', ')}`);
+    throw new StageError(
+      'config',
+      `The sign-in is not complete: ${missing.map((f) => FIELD_LABELS[f] ?? f).join(', ')} ${missing.length === 1 ? 'is' : 'are'} empty. Fill ${missing.length === 1 ? 'it' : 'them'} in on the module's sign-in.`,
+      { details: [`Sign-in type: ${type}`] },
+    );
   }
 }
 
@@ -108,8 +125,8 @@ async function requestToken(cfg, key) {
   // token endpoints are safe to retry (no side effects)
   const res = await httpRequest('auth', request, { retries: 2 });
   if (!res.ok) {
-    const n = normalizeApiError(res.status, res.body);
-    throw new StageError('auth', `Token request failed: ${n.message}`, {
+    const n = explainTokenError(res.status, res.body);
+    throw new StageError('auth', n.message, {
       status: res.status,
       details: n.details,
       code: n.code,
@@ -119,7 +136,7 @@ async function requestToken(cfg, key) {
   }
   const token = res.body && typeof res.body === 'object' ? getPath(res.body, tokenPath) : undefined;
   if (!token) {
-    throw new StageError('auth', `Token response did not contain "${tokenPath}".`, {
+    throw new StageError('auth', `Sign-in failed: the token response has no "${tokenPath}". Check the token URL and the token path.`, {
       status: res.status,
       raw: res.body,
     });
