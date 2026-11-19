@@ -1,5 +1,7 @@
 # Deployment guide (Azure)
 
+> Hosting on **Azure Web App + GitHub Actions** (the current plan): see [azure-web-app.md](azure-web-app.md).
+
 The recommended setup is listed below. Steps 1–4 are one-time; after that the pipeline deploys every merge to `main`.
 
 | piece | Azure service |

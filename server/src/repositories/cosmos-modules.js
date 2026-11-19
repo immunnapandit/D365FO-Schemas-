@@ -1,7 +1,7 @@
 import { cosmosContainer } from '../db/cosmos.js';
 import { notFound, conflict } from '../http-errors.js';
 import { encryptDefinition, restoreMasked, encrypt, decrypt } from '../services/secrets.js';
-import { now, slug, sameName, staleConflict, nameTaken } from './module-common.js';
+import { now, slug, sameName, staleConflict, nameTaken, packSpec, unpackSpec, checkStoredSpecSize } from './module-common.js';
 
 const modules = () => cosmosContainer('modules');
 
@@ -121,7 +121,7 @@ export async function deleteModule(id, user) {
 export async function getModuleSpec(id) {
   const d = await readDoc(id);
   if (!d?.spec) return null;
-  return { content: decrypt(d.spec), fileName: d.specFileName ?? undefined, updatedAt: d.specUpdatedAt, updatedBy: d.specUpdatedBy };
+  return { content: unpackSpec(decrypt(d.spec)), fileName: d.specFileName ?? undefined, updatedAt: d.specUpdatedAt, updatedBy: d.specUpdatedBy };
 }
 
 export async function setModuleSpec(id, { content, fileName }, user) {
@@ -129,5 +129,5 @@ export async function setModuleSpec(id, { content, fileName }, user) {
   if (!current) throw notFound('Module not found');
   await modules()
     .item(id, id)
-    .replace({ ...current, spec: encrypt(content), specFileName: fileName ?? null, specUpdatedAt: now(), specUpdatedBy: user?.name ?? null });
+    .replace({ ...current, spec: checkStoredSpecSize(encrypt(packSpec(content))), specFileName: fileName ?? null, specUpdatedAt: now(), specUpdatedBy: user?.name ?? null });
 }

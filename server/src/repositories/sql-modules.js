@@ -1,7 +1,7 @@
 import { getDb } from '../db/knex.js';
 import { notFound } from '../http-errors.js';
 import { encryptDefinition, restoreMasked, encrypt, decrypt } from '../services/secrets.js';
-import { now, slug, sameName, staleConflict, nameTaken } from './module-common.js';
+import { now, slug, sameName, staleConflict, nameTaken, packSpec, unpackSpec, checkStoredSpecSize } from './module-common.js';
 
 const parse = (s) => {
   try {
@@ -108,12 +108,12 @@ export async function deleteModule(id, user) {
 export async function getModuleSpec(id) {
   const row = await getDb()('modules').select('spec', 'spec_file_name', 'spec_updated_at', 'spec_updated_by').where({ id, is_deleted: false }).first();
   if (!row?.spec) return null;
-  return { content: decrypt(row.spec), fileName: row.spec_file_name ?? undefined, updatedAt: row.spec_updated_at, updatedBy: row.spec_updated_by };
+  return { content: unpackSpec(decrypt(row.spec)), fileName: row.spec_file_name ?? undefined, updatedAt: row.spec_updated_at, updatedBy: row.spec_updated_by };
 }
 
 export async function setModuleSpec(id, { content, fileName }, user) {
   const n = await getDb()('modules')
     .where({ id, is_deleted: false })
-    .update({ spec: encrypt(content), spec_file_name: fileName ?? null, spec_updated_at: now(), spec_updated_by: user?.name ?? null });
+    .update({ spec: checkStoredSpecSize(encrypt(packSpec(content))), spec_file_name: fileName ?? null, spec_updated_at: now(), spec_updated_by: user?.name ?? null });
   if (!n) throw notFound('Module not found');
 }

@@ -221,3 +221,31 @@ test('module validation and name clashes', async () => {
     .send({ name: 'basic ONE', auth: { type: 'none' } })
     .expect(409);
 });
+
+test('a large file (over 2 MB, like a full API export) is imported, kept compressed and shown again', async () => {
+  // 520 paths with long descriptions and example bodies: about 2.1 MB of YAML
+  const paths = Array.from({ length: 520 }, (_, i) => `  /data/Entity${i}:
+    post:
+      operationId: createEntity${i}
+      summary: Create entity ${i}
+      description: ${'Creates a record of entity ' + i + ' with all its fields. '.repeat(30)}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+${Array.from({ length: 40 }, (_, k) => `                field${k}: { type: string, description: Field ${k} of entity ${i} }`).join('\n')}
+      responses:
+        '201': { description: Created }`).join('\n');
+  const content = `openapi: 3.0.0\ninfo: { title: Big API, version: '1' }\nservers:\n  - url: https://big.example.com\npaths:\n${paths}\n`;
+  assert.ok(content.length > 2_000_000, `test file is ${content.length} characters`);
+
+  const preview = (await request(app).post('/api/import/openapi').send({ content }).expect(200)).body;
+  assert.equal(preview.requests.length, 520);
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true, fileName: 'big.yaml', include: [preview.requests[0].key ?? preview.requests[0].id ?? 0].filter(Boolean) }).expect(201)).body;
+  const shown = (await request(app).get(`/api/modules/${done.module.id}/spec`).expect(200)).body;
+  assert.equal(shown.content, content, 'the same file comes back');
+  const raw = await getDb()('modules').where({ id: done.module.id }).first();
+  assert.ok(raw.spec.length < 1_600_000, `stored ${raw.spec.length} characters`);
+});

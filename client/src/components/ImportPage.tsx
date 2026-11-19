@@ -10,7 +10,7 @@ interface Props {
   onCancel: () => void
 }
 
-const MAX_BYTES = 5 * 1024 * 1024
+const MAX_BYTES = 10 * 1024 * 1024
 
 const FIELD_LABELS: Record<string, string> = {
   tokenUrl: 'token URL',
@@ -45,7 +45,7 @@ export default function ImportPage({ onDone, onCancel }: Props) {
   async function readFile(file: File | undefined) {
     if (!file) return
     if (file.size > MAX_BYTES) {
-      setErrors(['The file is larger than 5 MB.'])
+      setErrors(['The file is larger than 10 MB.'])
       return
     }
     const text = await file.text()
@@ -139,7 +139,7 @@ export default function ImportPage({ onDone, onCancel }: Props) {
           </label>
           <input id={fileId} className="sr-only" type="file" accept=".yaml,.yml,.json,application/json,application/yaml,text/yaml"
             onChange={(e) => void readFile(e.target.files?.[0])} />
-          <span className="muted">{fileName ?? 'Postman collection (.json) or OpenAPI (.yaml, .yml, .json), up to 5 MB'}</span>
+          <span className="muted">{fileName ?? 'Postman collection (.json) or OpenAPI (.yaml, .yml, .json), up to 10 MB'}</span>
         </div>
         <details className="paste-box" open={!fileName && !!content}>
           <summary>Or paste the content</summary>

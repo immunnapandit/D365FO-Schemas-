@@ -138,7 +138,7 @@ export default router;
 
 /* ---------------- OpenAPI import ---------------- */
 
-const MAX_SPEC_CHARS = 1_500_000; // stays well below the Cosmos DB item limit (2 MB)
+const MAX_SPEC_CHARS = 10_000_000; // the file is stored compressed (see packSpec), so 10 MB of YAML or JSON fits
 
 export const importRouter = Router();
 importRouter.use(requireAdmin);
@@ -160,7 +160,7 @@ importRouter.post(
   wrap(async (req, res) => {
     const { moduleName, include, commit, fileName } = req.body ?? {};
     let { content } = req.body ?? {};
-    if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 1.5 MB).');
+    if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 10 MB).');
     // the file was edited in the app: its secrets were shown hidden, so take them from the stored file again
     if (typeof content === 'string' && content.includes(MASK)) {
       const target = typeof moduleName === 'string' && moduleName.trim() ? await modules.getModuleByName(moduleName.trim()) : null;

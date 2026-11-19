@@ -97,7 +97,7 @@ export function createApp({ clientDist = DEFAULT_CLIENT_DIST } = {}) {
       message: { message: 'Too many requests. Please slow down.', code: 'rate_limited' },
     }),
   );
-  app.use('/api/import', express.json({ limit: '5mb' })); // OpenAPI files can be large
+  app.use('/api/import', express.json({ limit: '12mb' })); // OpenAPI files can be large (10 MB + JSON quoting)
   app.use('/api', express.json({ limit: '1mb' }));
 
   /* ---------- public: what the browser needs to sign in ---------- */
