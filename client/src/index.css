@@ -414,3 +414,7 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .card-section .form-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
 .var-chip.var-empty { background: transparent; border: 1px dashed var(--line); color: var(--ink-soft); }
+
+/* import: search + select all above the request list */
+.import-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.import-toolbar .input { flex: 1 1 260px; min-width: 0; }

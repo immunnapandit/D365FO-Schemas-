@@ -41,6 +41,8 @@ export default function ImportPage({ onDone, onCancel }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
   const [errors, setErrors] = useState<string[]>([])
+  const [filter, setFilter] = useState('')
+  const filterId = useId()
 
   async function readFile(file: File | undefined) {
     if (!file) return
@@ -101,6 +103,22 @@ export default function ImportPage({ onDone, onCancel }: Props) {
       const n = new Set(s)
       if (n.has(key)) n.delete(key)
       else n.add(key)
+      return n
+    })
+
+  // the requests matching the search box; "select all" and the buttons act on these only
+  const words = filter.trim().toLowerCase()
+  const shown = (preview?.requests ?? []).filter(
+    (r) => !words || `${r.method} ${r.name} ${r.url}`.toLowerCase().includes(words),
+  )
+  const shownSelected = shown.filter((r) => selected.has(r.key)).length
+  const setShown = (on: boolean) =>
+    setSelected((s) => {
+      const n = new Set(s)
+      for (const r of shown) {
+        if (on) n.add(r.key)
+        else n.delete(r.key)
+      }
       return n
     })
 
@@ -207,10 +225,31 @@ export default function ImportPage({ onDone, onCancel }: Props) {
             {preview.requests.length === 0 ? (
               <p className="muted">The file has no requests besides the token request.</p>
             ) : (
+              <>
+              <div className="import-toolbar">
+                <label htmlFor={filterId} className="sr-only">Search requests</label>
+                <input id={filterId} className="input" type="search" placeholder="Search requests by name, method or URL"
+                  value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <button type="button" className="btn btn-sm" onClick={() => setShown(true)} disabled={!shown.length || shownSelected === shown.length}>
+                  Select {words ? 'shown' : 'all'}
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setShown(false)} disabled={!shownSelected}>
+                  Clear {words ? 'shown' : 'all'}
+                </button>
+                <span className="muted small">{selected.size} of {preview.requests.length} selected</span>
+              </div>
+              {shown.length === 0 ? (
+                <p className="muted">No request matches “{filter.trim()}”.</p>
+              ) : (
               <table className="runs import-table">
                 <thead>
                   <tr>
-                    <th><span className="sr-only">Import</span></th>
+                    <th>
+                      <input type="checkbox" aria-label={words ? 'Select all shown requests' : 'Select all requests'}
+                        checked={shownSelected === shown.length}
+                        ref={(el) => { if (el) el.indeterminate = shownSelected > 0 && shownSelected < shown.length }}
+                        onChange={(e) => setShown(e.target.checked)} />
+                    </th>
                     <th>Method</th>
                     <th>Request</th>
                     <th className="num">Fields</th>
@@ -218,7 +257,7 @@ export default function ImportPage({ onDone, onCancel }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.requests.map((r) => (
+                  {shown.map((r) => (
                     <tr key={r.key} onClick={() => toggle(r.key)}>
                       <td>
                         <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)}
@@ -235,6 +274,8 @@ export default function ImportPage({ onDone, onCancel }: Props) {
                   ))}
                 </tbody>
               </table>
+              )}
+              </>
             )}
             <div className="form-actions">
               <button className="btn btn-primary" onClick={() => void runImport()}
