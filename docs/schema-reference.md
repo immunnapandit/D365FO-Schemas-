@@ -193,6 +193,10 @@ What the import does:
   built from the example. `@odata.*` and read-only properties are left out.
 - Importing the same file again updates the forms with the same name (a new version each) instead of adding copies.
   The module's sign-in is kept.
+- The imported file is kept (encrypted) with the module. Admins can view, download and edit it on the module page
+  (**Imported file**) and update the forms from it. Secret values in the file (client secret, password, API key,
+  tokens, `client_secret=` in url-encoded bodies) are shown as `••••••••`; when the edited file is saved, the stored
+  values are put back, so leave the marker as it is or type a new value over it. The download has the values hidden too.
 
 ### Import a Postman collection
 
@@ -206,3 +210,10 @@ The import also accepts a Postman collection exported with **Export collection**
 - Each request becomes a form. The raw JSON body becomes the fields, and its sample values become default values
   (values that are `{{variables}}` stay empty). Folders are flattened. `:name` path variables become fields.
 - Re-importing never overwrites a value already set on the module; it only fills empty ones.
+
+**Lists in the body** (e.g. `"req": [ { ..., "lineItems": [ ... ] } ]`): each list becomes rows in the form, prefilled
+with the sample rows. Rows can be added, removed and moved; every row is a card. Lists inside lists work too.
+
+**Blank fields:** when the sample body has blank values (`""` or `null`), the form sends fields left empty the same way,
+so the request has the same keys as the sample. This is the "Send blank fields like the imported sample" option on the
+form's Request tab; turn it off to leave blank fields out (better for F&O OData, which rejects empty dates and enums).

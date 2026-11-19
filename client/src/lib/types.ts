@@ -42,6 +42,10 @@ export interface ApiConfig {
   query?: Record<string, string>
   bodyType?: 'json' | 'form'
   bodyTemplate?: unknown
+  /** Send fields left blank as "" / null, the way the imported sample body does. */
+  sendEmptyFields?: boolean
+  /** Set by the import: the sample's blank fields and their value. */
+  emptyFields?: unknown
   successMessage?: string
   timeoutMs?: number
 }

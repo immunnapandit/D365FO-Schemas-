@@ -106,6 +106,14 @@ export const definitionSchema = {
           description:
             'Optional shape of the request body. Use "{{form.field}}" and filters: | datetime, | number, | lower, | upper. If missing, the form data is sent as-is.',
         },
+        sendEmptyFields: {
+          type: 'boolean',
+          description: 'Send fields left blank as in the sample body ("" or null, see emptyFields) instead of leaving them out.',
+        },
+        emptyFields: {
+          description:
+            'Set by the import: the sample body\'s blank fields and their value ("" or null), e.g. { "req": [{ "irnDate": null, "irn": "" }] }.',
+        },
         successMessage: str('Message shown on success. Can use {{response.Field}} and {{form.field}}.'),
         timeoutMs: { type: 'integer', minimum: 1000, maximum: 300000, description: 'Request timeout for this API' },
       },

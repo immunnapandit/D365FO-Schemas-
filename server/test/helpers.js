@@ -12,6 +12,11 @@ export async function startUpstream() {
   app.use(express.json());
   const state = { tokenCalls: 0, tokenSeq: 0, revoked: new Set(), flaky: 0, lastBody: null, lastHeaders: null };
 
+  // no sign-in: records the body as received, for body-shape tests
+  app.post('/echo', (req, res) => {
+    state.lastBody = req.body;
+    res.json({ ok: true });
+  });
   app.post('/tenant/oauth2/v2.0/token', (req, res) => {
     state.tokenCalls += 1;
     if (req.body.grant_type === 'password') {

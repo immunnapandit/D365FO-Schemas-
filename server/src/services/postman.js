@@ -84,16 +84,67 @@ function parseJsonBody(raw) {
   }
 }
 
-/** Schema from a sample body; sample values become default values (except {{variables}} and nulls). */
+const isVariable = (v) => {
+  VARIABLE.lastIndex = 0;
+  const hit = typeof v === 'string' && VARIABLE.test(v);
+  VARIABLE.lastIndex = 0;
+  return hit;
+};
+
+/** A sample value without nulls, {{variables}} and @odata keys, so it can prefill a list of rows. */
+function sampleRows(v) {
+  if (Array.isArray(v)) return v.map(sampleRows).filter((x) => x !== undefined);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k.startsWith('@')) continue;
+      const c = sampleRows(x);
+      if (c !== undefined) out[k] = c;
+    }
+    return out;
+  }
+  return v === null || v === undefined || isVariable(v) ? undefined : v;
+}
+
+/**
+ * Keys whose sample value is "" or null, with that value, keeping the nesting (a list keeps its first row).
+ * Lets a form send blank fields the way the sample (and Postman) does. Undefined when there are none.
+ */
+function emptySkeleton(v) {
+  if (Array.isArray(v)) {
+    const s = v.length ? emptySkeleton(v[0]) : undefined;
+    return s === undefined ? undefined : [s];
+  }
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k.startsWith('@')) continue;
+      if (x === '' || x === null) out[k] = x;
+      else if (typeof x === 'object') {
+        const s = emptySkeleton(x);
+        if (s !== undefined) out[k] = s;
+      }
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Schema from a sample body; sample values become default values (except {{variables}} and nulls).
+ * A list (e.g. invoices with their lineItems) is prefilled with the sample rows, which can then be
+ * changed, removed or added to in the form.
+ */
 function schemaWithDefaults(value) {
   const schema = inferSchema(value);
   const addDefaults = (s, v) => {
     if (s.type === 'object' && v && typeof v === 'object' && !Array.isArray(v)) {
       for (const [k, sub] of Object.entries(s.properties ?? {})) addDefaults(sub, v[k]);
-    } else if (s.type !== 'array' && s.type !== 'object' && v !== null && v !== undefined && !(typeof v === 'string' && VARIABLE.test(v))) {
+    } else if (s.type === 'array') {
+      if (Array.isArray(v) && v.length) s.default = sampleRows(v);
+    } else if (s.type !== 'object' && v !== null && v !== undefined && !isVariable(v)) {
       s.default = v;
     }
-    VARIABLE.lastIndex = 0;
   };
   addDefaults(schema, value);
   return schema;
@@ -190,9 +241,13 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
     let formSchema;
     if (body && !['GET', 'DELETE'].includes(M)) {
       let bodySchema = null;
+      let empty;
       if (body.mode === 'raw' && body.raw && String(body.raw).trim()) {
         const parsed = parseJsonBody(body.raw);
-        if (parsed && typeof parsed === 'object') bodySchema = schemaWithDefaults(parsed);
+        if (parsed && typeof parsed === 'object') {
+          bodySchema = schemaWithDefaults(parsed);
+          empty = emptySkeleton(parsed);
+        }
         else {
           properties.body = { type: 'string', title: 'Body', default: String(body.raw) };
           api.bodyTemplate = '{{form.body}}';
@@ -204,19 +259,29 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
       }
       if (bodySchema) {
         const isObject = bodySchema.type === 'object';
+        let emptyFields = empty;
         if (isObject && !Object.keys(properties).length) {
           formSchema = bodySchema; // body = form data as-is
         } else if (isObject) {
           const bodyTemplate = {};
+          const renamed = {};
           for (const [k, v] of Object.entries(bodySchema.properties ?? {})) {
             const key = properties[k] ? `${k}_body` : k;
             properties[key] = v;
             bodyTemplate[k] = `{{form.${key}}}`;
+            if (empty && k in empty) renamed[key] = empty[k];
           }
           api.bodyTemplate = bodyTemplate;
+          emptyFields = Object.keys(renamed).length ? renamed : undefined;
         } else {
           properties.body = { title: 'Body', ...bodySchema };
           api.bodyTemplate = '{{form.body}}';
+          emptyFields = empty === undefined ? undefined : { body: empty };
+        }
+        // the sample sends blank fields as "" / null: send them the same way (can be switched off on the form)
+        if (emptyFields) {
+          api.sendEmptyFields = true;
+          api.emptyFields = emptyFields;
         }
       }
     }

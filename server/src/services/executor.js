@@ -54,6 +54,23 @@ function clean(value) {
   return value === '' || value === null ? undefined : value;
 }
 
+/**
+ * Puts blank fields back with the sample's value ("" or null) where the form left them out.
+ * A list applies its row pattern to every row; fields the user filled in are never changed.
+ */
+export function fillEmpty(data, pattern) {
+  if (Array.isArray(pattern)) return Array.isArray(data) ? data.map((row) => fillEmpty(row, pattern[0])) : data;
+  if (!pattern || typeof pattern !== 'object' || !data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const out = { ...data };
+  for (const [k, p] of Object.entries(pattern)) {
+    if (p === '' || p === null) {
+      if (out[k] === undefined) out[k] = p;
+    } else if (out[k] !== undefined) out[k] = fillEmpty(out[k], p);
+    else if (!Array.isArray(p)) out[k] = fillEmpty({}, p);
+  }
+  return out;
+}
+
 function errorResult(e, extra = {}) {
   return {
     ok: false,
@@ -157,7 +174,8 @@ export async function execute(form, rawFormData, mod = null) {
 
   try {
     if (!form.api?.url) throw new StageError('config', 'Schema has no api.url');
-    const fd = clean(validateForm(form, rawFormData)) ?? {};
+    let fd = clean(validateForm(form, rawFormData)) ?? {};
+    if (form.api.sendEmptyFields && form.api.emptyFields) fd = fillEmpty(fd, form.api.emptyFields);
 
     const { auth: authConfig, vars: rawVars } = effective(form, mod);
     const kv = await resolveKvRefs(authConfig, form.api, rawVars, mod?.headers);

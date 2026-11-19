@@ -89,6 +89,16 @@ function RequestPanel({ def, update }: { def: FormDefinition; update: (d: FormDe
           <span>Shape the body yourself<small>Needed for custom services and for date or number conversions.</small></span>
         </label>
       </div>
+      {apiCfg.emptyFields !== undefined && (
+        <div className="field field-wide">
+          <span className="field-label">Blank fields</span>
+          <label className="choice">
+            <input type="checkbox" checked={apiCfg.sendEmptyFields === true}
+              onChange={(e) => set('sendEmptyFields', e.target.checked ? true : undefined)} />
+            <span>Send blank fields like the imported sample<small>Fields left empty are sent as "" or null, as in the sample body. Turn off to leave them out of the request.</small></span>
+          </label>
+        </div>
+      )}
       {custom && (
         <JsonText key="body" label="Body template" rows={10} value={apiCfg.bodyTemplate} onChange={(v) => set('bodyTemplate', v ?? {})}
           hint={<>Insert a field with <code>{'{{form.FieldName}}'}</code>. Converters: <code>| datetime</code>, <code>| number</code>, <code>| lower</code>, <code>| upper</code>.</>} />

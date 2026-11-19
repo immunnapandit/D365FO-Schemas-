@@ -106,6 +106,16 @@ test('only admins can create, edit, delete or see configuration', async () => {
   await request(app).get(`/api/forms/${created.id}/versions`).set(user).expect(403);
   await request(app).post(`/api/forms/${created.id}/test-auth`).set(user).expect(403);
   await request(app).delete(`/api/forms/${created.id}`).set(user).expect(403);
+
+  // modules (sign-in, variables, imported file) and import are admin-only too
+  const mod = (await request(app).post('/api/modules').set(admin).send({ name: 'Admin module', auth: { type: 'none' } }).expect(201)).body;
+  await request(app).get('/api/modules').set(user).expect(403);
+  await request(app).get(`/api/modules/${mod.id}`).set(user).expect(403);
+  await request(app).get(`/api/modules/${mod.id}/spec`).set(user).expect(403);
+  await request(app).post(`/api/modules/${mod.id}/test-auth`).set(user).expect(403);
+  await request(app).put(`/api/modules/${mod.id}`).set(user).send(mod).expect(403);
+  await request(app).post('/api/modules').set(user).send({ name: 'Nope', auth: { type: 'none' } }).expect(403);
+  await request(app).post('/api/import/openapi').set(user).send({ content: '{}' }).expect(403);
 });
 
 test('allowedRoles hides a form from users without that role', async () => {

@@ -214,3 +214,92 @@ test('incomplete or wrong sign-in gives a clear message', async () => {
   assert.match(t.message, /^Sign-in failed: The client secret is wrong/);
   assert.ok(t.details.includes('Error code: AADSTS7000215'));
 });
+
+test('the imported file is shown with its secrets hidden, and editing it keeps them', async () => {
+  const base = collection(up.url, { secret: 'file-secret-123' });
+  const content = JSON.stringify({ ...base, info: { ...base.info, name: 'Hidden file secrets' } }, null, 2);
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true, fileName: 'h.json' }).expect(201)).body;
+  const mod = done.module;
+
+  const shown = (await request(app).get(`/api/modules/${mod.id}/spec`).expect(200)).body;
+  assert.ok(!shown.content.includes('file-secret-123'), 'secret is not sent to the browser');
+  assert.ok(shown.content.includes('••••••••'));
+
+  // admin edits the shown file (adds a field) and imports it again: preview and commit both work
+  const edited = shown.content.replace('\\"Lines\\": 2', '\\"Lines\\": 2,\\n  \\"Note\\": \\"x\\"');
+  assert.notEqual(edited, shown.content);
+  await request(app).post('/api/import/openapi').send({ content: edited, moduleName: mod.name }).expect(200);
+  await request(app).post('/api/import/openapi').send({ content: edited, moduleName: mod.name, commit: true }).expect(201);
+
+  const { getModuleSpec } = await import('../src/repositories/modules.js');
+  const stored = await getModuleSpec(mod.id);
+  assert.ok(stored.content.includes('file-secret-123'), 'the real secret is still stored');
+  assert.ok(stored.content.includes('Note'), 'the edit is stored');
+  assert.ok(!stored.content.includes('••••••••'));
+
+  // a marker in a file that has no stored value is refused with a clear message
+  const other = JSON.stringify({ ...base, info: { ...base.info, name: 'No stored file' }, variable: [{ key: 'clientSecret', value: '••••••••' }] });
+  const r = await request(app).post('/api/import/openapi').send({ content: other, commit: true }).expect(400);
+  assert.match(r.body.message, /hidden value/);
+});
+
+test('a body with lists (invoices with line items) is prefilled from the sample and sent as lists', async () => {
+  const sample = {
+    req: [
+      {
+        docNo: 'INV-1',
+        irnDate: null,
+        lineItemAmt: 57239.83,
+        supCode: '{{supplier}}',
+        lineItems: [
+          { lineNo: 1, itemDesc: 'Bank charges', taxableVal: 48508.33, paymentDate: null },
+          { lineNo: 2, itemDesc: 'Fees', taxableVal: 10 },
+        ],
+      },
+    ],
+  };
+  const col = {
+    info: { name: 'Lists', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    item: [{ name: 'Save invoices', request: { method: 'POST', url: 'https://api.example.com/gst/save', body: { mode: 'raw', raw: JSON.stringify(sample) } } }],
+  };
+  const { buildPostmanPlan } = await import('../src/services/postman.js');
+  const schema = buildPostmanPlan(col).requests[0].definition.formSchema;
+  const req = schema.properties.req;
+  assert.equal(req.type, 'array');
+  assert.equal(req.items.properties.lineItems.type, 'array');
+  assert.deepEqual(req.default, [
+    {
+      docNo: 'INV-1',
+      lineItemAmt: 57239.83,
+      lineItems: [
+        { lineNo: 1, itemDesc: 'Bank charges', taxableVal: 48508.33 },
+        { lineNo: 2, itemDesc: 'Fees', taxableVal: 10 },
+      ],
+    },
+  ]);
+});
+
+test('blank sample fields ("" and null) are sent the way the sample sends them', async () => {
+  const sample = { req: [{ docNo: 'INV-1', irn: '', irnDate: null, lineItems: [{ lineNo: 1, itemCode: '', paymentDate: null }] }], note: '' };
+  const col = {
+    info: { name: 'Blank fields', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    item: [{ name: 'Save', request: { method: 'POST', url: `${up.url}/echo`, body: { mode: 'raw', raw: JSON.stringify(sample) } } }],
+  };
+  const done = (await request(app).post('/api/import/openapi').send({ content: JSON.stringify(col), commit: true }).expect(201)).body;
+  const form = (await request(app).get(`/api/forms/${done.created[0].id}`).expect(200)).body;
+  assert.equal(form.api.sendEmptyFields, true);
+  assert.deepEqual(form.api.emptyFields, { req: [{ irn: '', irnDate: null, lineItems: [{ itemCode: '', paymentDate: null }] }], note: '' });
+
+  // the form sends what RJSF gives: blank fields left out; a second row added by the user
+  const formData = { req: [{ docNo: 'INV-1', lineItems: [{ lineNo: 1 }, { lineNo: 2, itemCode: 'X' }] }] };
+  await request(app).post(`/api/forms/${form.id}/execute`).send({ formData }).expect(200);
+  assert.deepEqual(up.state.lastBody, {
+    req: [{ docNo: 'INV-1', irn: '', irnDate: null, lineItems: [{ lineNo: 1, itemCode: '', paymentDate: null }, { lineNo: 2, itemCode: 'X', paymentDate: null }] }],
+    note: '',
+  });
+
+  // switched off: blank fields are left out, as before
+  await request(app).put(`/api/forms/${form.id}`).send({ ...form, api: { ...form.api, sendEmptyFields: false } }).expect(200);
+  await request(app).post(`/api/forms/${form.id}/execute`).send({ formData }).expect(200);
+  assert.deepEqual(up.state.lastBody, { req: [{ docNo: 'INV-1', lineItems: [{ lineNo: 1 }, { lineNo: 2, itemCode: 'X' }] }] });
+});

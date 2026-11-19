@@ -4,7 +4,8 @@ import { requireAdmin } from '../middleware/auth.js';
 import * as modules from '../repositories/modules.js';
 import * as forms from '../repositories/forms.js';
 import { validateModule, validateDefinition } from '../services/definition-schema.js';
-import { containsMask, decryptDefinition, maskDefinition } from '../services/secrets.js';
+import { MASK, containsMask, decryptDefinition, maskDefinition } from '../services/secrets.js';
+import { maskSpecContent, restoreSpecContent } from '../services/spec-secrets.js';
 import { testAuth } from '../services/executor.js';
 import { clearTokenCache } from '../services/outbound-auth.js';
 import { planFromContent, ImportError } from '../services/import-plan.js';
@@ -117,7 +118,8 @@ router.get(
       throw new HttpError(500, 'The stored file could not be decrypted. Was SECRET_ENCRYPTION_KEY changed?', [], 'decrypt_failed');
     }
     if (!spec) throw notFound('This module was not imported from a file.');
-    res.json(spec);
+    // secret values in the file are hidden like every other module secret
+    res.json({ ...spec, content: maskSpecContent(spec.content) });
   }),
 );
 
@@ -156,8 +158,21 @@ function stripOrder(uiSchema) {
 importRouter.post(
   '/openapi',
   wrap(async (req, res) => {
-    const { content, moduleName, include, commit, fileName } = req.body ?? {};
+    const { moduleName, include, commit, fileName } = req.body ?? {};
+    let { content } = req.body ?? {};
     if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 1.5 MB).');
+    // the file was edited in the app: its secrets were shown hidden, so take them from the stored file again
+    if (typeof content === 'string' && content.includes(MASK)) {
+      const target = typeof moduleName === 'string' && moduleName.trim() ? await modules.getModuleByName(moduleName.trim()) : null;
+      const stored = target ? await modules.getModuleSpec(target.id).catch(() => null) : null;
+      const restored = restoreSpecContent(content, stored?.content);
+      if (restored.missing.length) {
+        throw badRequest(
+          `The file contains a hidden value (${MASK}) that could not be matched to the stored file: ${[...new Set(restored.missing)].join(', ')}. Type the real value in its place.`,
+        );
+      }
+      content = restored.content;
+    }
     let plan;
     try {
       plan = planFromContent(content, { moduleName });

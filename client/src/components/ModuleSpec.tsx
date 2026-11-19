@@ -151,7 +151,8 @@ export default function ModuleSpec({ module: mod, onImported }: Props) {
         <>
           <p className="muted section-intro">
             Edit the file here, for example to add a field to a request body, then update the forms. Requests removed from the
-            file are not deleted; delete those forms yourself.
+            file are not deleted; delete those forms yourself. Secret values are shown as •••••••• and stay stored; leave
+            them as they are, or type a new value over them.
           </p>
           <div className="spec-editor">
             <Suspense fallback={<p className="muted pad">Loading the editor…</p>}>

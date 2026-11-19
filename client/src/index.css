@@ -185,9 +185,22 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .rjsf .text-danger { color: var(--err); font-size: 13.5px; }
 .rjsf .checkbox label { display: inline-flex; gap: 9px; align-items: center; cursor: pointer; }
 .rjsf input[type='checkbox'], .choice input, .check-cell input { width: 17px; height: 17px; accent-color: var(--primary); }
-.rjsf .array-item { display: flex; gap: 8px; align-items: flex-start; }
-.rjsf .array-item > div:first-child { flex: 1; }
-.rjsf .btn-add::after { content: 'Add'; }
+/* lists (e.g. invoices with line items): every row is a card */
+.rjsf .array-row { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 14px; background: var(--surface); }
+.rjsf .array-row .array-row { background: var(--bg, #f6f7f8); }
+.rjsf .array-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line); }
+.rjsf .array-row-title { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+.rjsf .array-row-tools { display: flex; gap: 2px; }
+.rjsf .array-row-body { padding: 14px; }
+.rjsf .array-row-body > .form-group > fieldset > legend,
+.rjsf .array-row-body > fieldset > legend { display: none; }
+.rjsf .array-row-body .form-group { max-width: none; }
+.rjsf .array-row-body > .form-group > fieldset,
+.rjsf .array-row-body > fieldset { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); column-gap: 16px; }
+.rjsf .array-row-body fieldset > .form-group:has(> fieldset) { grid-column: 1 / -1; }
+.rjsf .array-add { margin: 4px 0 18px; }
+.rjsf .btn-icon { padding: 5px; min-width: 0; line-height: 0; }
+.rjsf .btn-danger-quiet:hover:not(:disabled) { color: var(--err); }
 .form-actions { display: flex; gap: 8px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
 
 /* ------------------------------------------------------------ result + pipeline */

@@ -9,6 +9,7 @@ import ResultCard, { Pipeline } from './ResultCard'
 import ErrorBoundary from './ErrorBoundary'
 import RunHistory from './RunHistory'
 import Icon from './Icon'
+import { formTemplates } from '../lib/form-templates'
 
 // Plain-language messages instead of the validator's wording
 function transformErrors(errors: RJSFValidationError[]) {
@@ -160,6 +161,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
                 schema={def.formSchema}
                 uiSchema={def.uiSchema}
                 validator={validator}
+                templates={formTemplates}
                 formData={formData}
                 onChange={(e) => setFormData((e.formData ?? {}) as Record<string, unknown>)}
                 onSubmit={(e) => submit((e.formData ?? {}) as Record<string, unknown>)}
