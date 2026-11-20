@@ -474,16 +474,23 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .rjsf .array-row-grid .array-row-body > .form-group > fieldset,
 .rjsf .array-row-grid .array-row-body > fieldset { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); column-gap: 8px; }
 .rjsf .array-row-grid .array-row-body .form-group { margin-bottom: 0; }
-.rjsf .array-row-grid label.control-label,
-.rjsf .array-row-grid .field-description,
-.rjsf .array-row-grid .help-block { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group > label.control-label,
+.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group > .field-description,
+.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group > .help-block { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .rjsf .array-row-grid input:not([type=checkbox]), .rjsf .array-row-grid select { width: 100%; }
 .rjsf .array-grid-empty { padding: 14px; color: var(--ink-soft); font-size: 13.5px; }
 .rjsf .form-group:has(> fieldset.array-grid), .rjsf .form-group:has(> .array-grid) { max-width: none; }
 .rjsf .array-grid-tools { width: 168px; flex-wrap: nowrap; }
 .rjsf .array-grid-tools .btn-icon { padding: 6px; min-width: 0; flex: none; }
 .rjsf .array-grid-inner { min-width: calc(var(--cols) * 130px + 250px); }
-.rjsf .array-row-grid .checkbox label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group > .checkbox label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .rjsf .array-row-grid .checkbox label { padding-top: 8px; }
 .rjsf .array-grid-tools { width: 76px; }
 .rjsf .array-grid-inner { min-width: calc(var(--cols) * 120px + 150px); }
+
+/* wide rows: sticky row number, nested lists/objects under the row */
+.rjsf .array-grid-scroll { max-width: 100%; }
+.rjsf .array-grid-head .array-grid-no, .rjsf .array-row-grid > .array-grid-no { position: sticky; left: 0; z-index: 1; background: inherit; }
+.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group:has(> fieldset),
+.rjsf .array-row-grid > .array-row-body > fieldset > .form-group:has(> fieldset) { order: 2; position: sticky; left: 44px; width: min(860px, calc(100vw - 420px)); margin-top: 10px; }
+.rjsf .array-row-grid > .array-grid-tools, .rjsf .array-grid-head > .array-grid-tools { position: sticky; right: 0; z-index: 1; background: inherit; }

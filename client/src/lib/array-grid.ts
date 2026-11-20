@@ -1,6 +1,6 @@
 import type { RJSFSchema, UiSchema } from '@rjsf/utils'
 
-const MAX_COLUMNS = 12
+const MAX_COLUMNS = 60
 const PRIMITIVE = new Set(['string', 'number', 'integer', 'boolean'])
 
 export interface GridColumn { key: string; title: string; required: boolean }
@@ -12,15 +12,15 @@ function isPrimitive(s: unknown): boolean {
 }
 
 /**
- * Columns for a list whose rows are flat objects (one value per field), e.g. invoice lines.
- * Returns null when the rows are nested or too wide, so the list falls back to row cards.
+ * Columns for a list whose rows are objects, e.g. invoice lines: every single-value field becomes a column.
+ * Fields that hold their own list or object are shown under the row. Returns null when there are no
+ * single-value fields or too many, so the list falls back to row cards.
  */
 export function gridColumns(itemSchema: unknown, itemUi?: UiSchema): GridColumn[] | null {
   const s = itemSchema as RJSFSchema | undefined
   if (!s || s.type !== 'object' || !s.properties || s.additionalProperties === true) return null
-  const keys = Object.keys(s.properties)
+  const keys = Object.keys(s.properties).filter((k) => isPrimitive((s.properties as Record<string, unknown>)[k]))
   if (keys.length === 0 || keys.length > MAX_COLUMNS) return null
-  if (!keys.every((k) => isPrimitive((s.properties as Record<string, unknown>)[k]))) return null
   const order = itemUi?.['ui:order'] as string[] | undefined
   const sorted = order
     ? order.filter((k) => keys.includes(k) || k === '*').flatMap((k) => (k === '*' ? keys.filter((x) => !order.includes(x)) : [k]))

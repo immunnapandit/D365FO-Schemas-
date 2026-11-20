@@ -35,7 +35,7 @@ export function AddButton({ className, onClick, disabled, id }: IconButtonProps)
   )
 }
 
-/** Lists of flat rows (e.g. invoice lines) are shown as a table; anything else as cards. */
+/** Lists of rows with single-value fields (e.g. invoice lines) are shown as a table; anything else as cards. */
 export function ArrayFieldTemplate(props: ArrayFieldTemplateProps) {
   const { canAdd, className, disabled, fieldPathId, uiSchema, items, optionalDataControl, onAddClick, readonly, registry, required, schema, title } = props
   const uiOptions = getUiOptions(uiSchema)
