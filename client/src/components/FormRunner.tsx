@@ -9,7 +9,7 @@ import ResultCard, { Pipeline } from './ResultCard'
 import ErrorBoundary from './ErrorBoundary'
 import RunHistory from './RunHistory'
 import Icon from './Icon'
-import { formTemplates } from '../lib/form-templates'
+import { formTemplates, withListOptions } from '../lib/form-templates'
 
 // Plain-language messages instead of the validator's wording
 function transformErrors(errors: RJSFValidationError[]) {
@@ -104,6 +104,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
 
   const authType = def.auth?.type ?? 'none'
   const hasFields = Object.keys((def.formSchema?.properties as object) ?? {}).length > 0
+  const listUi = withListOptions(def.uiSchema)
 
   return (
     <div className="page">
@@ -159,7 +160,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
               <Form
                 key={`${id}-${def.version}-${resetKey}`}
                 schema={def.formSchema}
-                uiSchema={def.uiSchema}
+                uiSchema={listUi}
                 validator={validator}
                 templates={formTemplates}
                 formData={formData}

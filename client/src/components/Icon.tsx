@@ -31,6 +31,7 @@ const PATHS: Record<string, ReactNode> = {
   settings: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
   upload: <path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 15v5h14v-5" />,
   key: <><circle cx="8" cy="15" r="4" /><path d="M11 12l8-8M16 7l2 2M14 9l2 2" /></>,
+  sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
 }
 
 export default function Icon({ name, size = 18, className }: { name?: string; size?: number; className?: string }) {

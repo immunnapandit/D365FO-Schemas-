@@ -12,7 +12,7 @@ import AuthFields from './AuthFields'
 import { Field, JsonText, Pairs, Text } from './inputs'
 import { FORM_ICONS, isFormIcon } from '../lib/icons'
 import { useFeedback } from '../lib/feedback'
-import { formTemplates } from '../lib/form-templates'
+import { formTemplates, withListOptions } from '../lib/form-templates'
 
 const JsonEditor = lazy(() => import('./JsonEditor'))
 
@@ -534,7 +534,7 @@ export default function SchemaEditor({ mode, initial, categories, onSaved, onCan
             </div>
             {def.formSchema && Object.keys((def.formSchema.properties as object) ?? {}).length > 0 ? (
               <ErrorBoundary resetKey={text}>
-                <Form schema={def.formSchema} uiSchema={def.uiSchema} validator={validator} templates={formTemplates} showErrorList={false} noHtml5Validate>
+                <Form schema={def.formSchema} uiSchema={withListOptions(def.uiSchema)} validator={validator} templates={formTemplates} showErrorList={false} noHtml5Validate>
                   <div className="form-actions"><button type="button" className="btn btn-primary" disabled>Submit</button></div>
                 </Form>
               </ErrorBoundary>

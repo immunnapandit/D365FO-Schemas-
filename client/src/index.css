@@ -488,9 +488,75 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .rjsf .array-grid-tools { width: 76px; }
 .rjsf .array-grid-inner { min-width: calc(var(--cols) * 120px + 150px); }
 
-/* wide rows: sticky row number, nested lists/objects under the row */
-.rjsf .array-grid-scroll { max-width: 100%; }
-.rjsf .array-grid-head .array-grid-no, .rjsf .array-row-grid > .array-grid-no { position: sticky; left: 0; z-index: 1; background: inherit; }
-.rjsf .array-row-grid > .array-row-body > .form-group > fieldset > .form-group:has(> fieldset),
-.rjsf .array-row-grid > .array-row-body > fieldset > .form-group:has(> fieldset) { order: 2; position: sticky; left: 44px; width: min(860px, calc(100vw - 420px)); margin-top: 10px; }
-.rjsf .array-row-grid > .array-grid-tools, .rjsf .array-grid-head > .array-grid-tools { position: sticky; right: 0; z-index: 1; background: inherit; }
+
+.btn-danger-quiet { color: var(--err); }
+.btn-danger-quiet:hover:not(:disabled) { background: var(--err-bg); }
+.btn-quiet.btn-sm { gap: 6px; }
+
+/* Long lines (many fields per line): lines grid + Line details, as on a D365 F&O order */
+.rjsf .array-lines > .form-group, .rjsf .form-group:has(> fieldset.array-lines) { max-width: none; }
+.lines { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin: 4px 0 18px; }
+.lines-bar { display: flex; align-items: center; gap: 14px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.lines-count { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+.lines-count-err { color: var(--err); font-weight: 600; }
+.lines-hint { margin-left: auto; font-size: 12.5px; color: var(--ink-soft); }
+.lines-scroll { overflow-x: auto; }
+.lines-grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; table-layout: fixed; min-width: calc(var(--cols) * 118px + 90px); }
+.lines-grid th { position: sticky; top: 0; background: var(--bg); color: var(--ink-soft); font-weight: 600; font-size: 12.5px; text-align: left;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lines-grid th .req { color: var(--err); }
+.lines-grid td { padding: 0 10px; height: 38px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.lines-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+.lines-grid .lines-no { width: 44px; text-align: center; color: var(--ink-soft); padding: 0 4px; }
+.lines-grid .lines-tools { width: 46px; text-align: right; padding: 0 4px; }
+.lines-grid tbody tr { cursor: pointer; outline: none; }
+.lines-grid tbody tr:hover td { background: var(--bg); }
+.lines-grid tbody tr:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.lines-grid tbody tr.is-selected td { background: var(--tint); }
+.lines-grid tbody tr.is-selected td:first-child { box-shadow: inset 4px 0 0 var(--accent-strong); color: var(--ink); font-weight: 600; }
+.lines-grid tbody tr.has-error td:first-child { box-shadow: inset 4px 0 0 var(--err); }
+.lines-grid tbody tr.has-error:not(.is-selected) td { background: var(--err-bg); }
+.lines-grid tbody tr:last-child td { border-bottom: 0; }
+.lines-grid .lines-tools .btn-icon { opacity: 0; }
+.lines-grid tr:hover .lines-tools .btn-icon, .lines-grid tr.is-selected .lines-tools .btn-icon, .lines-grid .lines-tools .btn-icon:focus-visible { opacity: 1; }
+.lines-err { color: var(--err); display: inline-flex; }
+.lines-blank { display: inline-block; width: 18px; border-bottom: 1px solid var(--line-strong); vertical-align: middle; }
+.lines-empty { display: flex; align-items: center; gap: 12px; padding: 18px 12px; color: var(--ink-soft); font-size: 13.5px; }
+
+.line-details { border-top: 1px solid var(--line-strong); }
+.line-details[hidden] { display: none; }
+.line-details-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.line-details-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.line-details-title h3 { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.line-details-title span { font-size: 13px; color: var(--ink-soft); }
+.line-details-nav { display: flex; gap: 2px; }
+.line-details-actions { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.line-details-body { padding: 14px 14px 4px; }
+.rjsf .line-details-body > fieldset,
+.rjsf .line-details-body > .form-group > fieldset { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); column-gap: 16px; }
+.rjsf .line-details-body .form-group:has(> fieldset) { grid-column: 1 / -1; }
+.rjsf .line-details-body .form-group { max-width: none; }
+@media (prefers-reduced-motion: no-preference) { .lines-grid td { transition: background-color .12s; } }
+.rjsf .line-details-body > fieldset > legend, .rjsf .line-details-body > .form-group > fieldset > legend,
+.rjsf .line-details-body > .form-group > fieldset > .field-description { display: none; }
+
+/* Menu collapsed to a rail of icons, so forms and line grids get the whole width */
+.sidebar { transition: width .18s ease, padding .18s ease; }
+.sidebar-head { display: flex; align-items: center; gap: 6px; }
+.sidebar-head .brand { flex: 1; min-width: 0; }
+.sidebar .collapse-btn { color: var(--nav-muted); flex: none; }
+.sidebar .collapse-btn:hover { color: #fff; background: var(--nav-hover); }
+.sidebar-rail { width: 64px; padding: 16px 10px 14px; align-items: center; gap: 6px; }
+.rail-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--nav-text); cursor: pointer; }
+.rail-btn:hover { background: var(--nav-hover); color: #fff; }
+.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rail-brand { margin-bottom: 4px; }
+.rail-primary { background: var(--accent); color: var(--ink); }
+.rail-primary:hover { background: var(--accent-strong); color: var(--ink); }
+.rail-sep { width: 28px; height: 1px; background: var(--nav-hover); margin: 6px 0; }
+.rail-avatar { margin-top: auto; cursor: default; }
+@media (max-width: 860px) { .sidebar-head .collapse-btn { display: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+/* forms with long lines use the width they get; more again when the menu is collapsed */
+.page:has(.array-lines), .page:has(.array-grid) { max-width: 1240px; }
+.nav-collapsed .page:has(.array-lines), .nav-collapsed .page:has(.array-grid) { max-width: 1480px; }

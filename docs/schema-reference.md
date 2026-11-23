@@ -155,6 +155,19 @@ The browser and the server both validate against it.
 
 See the react-jsonschema-form documentation for all `uiSchema` options.
 
+### Lists in a form
+
+A list whose lines have only a few simple fields (up to 8, e.g. item, quantity, price) is a table you fill in place,
+with **Add row**. A list with more fields, or with a list inside each line (e.g. GST invoices with their line items),
+works like the lines of a D365 F&O order: a lines grid shows the key columns (required fields first, then line number,
+item, description, quantity, price, amount), and **Line details** below it shows every field of the selected line,
+with previous/next, move, copy and remove. After a failed submit the lines with errors are marked and the first one
+opens. To choose the grid columns yourself, set them on the list in uiSchema:
+
+```json
+{ "lines": { "ui:options": { "gridColumns": ["lineNo", "itemNumber", "quantity", "lineAmount"] } } }
+```
+
 ## Error stages shown to the user
 
 | stage | meaning |

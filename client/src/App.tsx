@@ -7,6 +7,7 @@ import ImportPage from './components/ImportPage'
 import { api, ApiError } from './lib/api'
 import { canSignOut, initAuth, signOut } from './lib/auth'
 import { groupByModule } from './lib/modules'
+import { useNarrow } from './lib/use-narrow'
 import { FeedbackProvider } from './components/Feedback'
 import Icon from './components/Icon'
 import type { CurrentUser, FormDefinition, FormSummary } from './lib/types'
@@ -36,6 +37,17 @@ export default function App() {
   const [listError, setListError] = useState<string | null>(null)
   const [view, setView] = useState<View>({ kind: 'welcome' })
   const [menuOpen, setMenuOpen] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try { return localStorage.getItem('sf.navCollapsed') === '1' } catch { return false }
+  })
+  const narrow = useNarrow()
+  const collapsed = navCollapsed && !narrow
+  const toggleNav = () => {
+    setNavCollapsed((c) => {
+      try { localStorage.setItem('sf.navCollapsed', c ? '0' : '1') } catch { /* private mode */ }
+      return !c
+    })
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -118,7 +130,7 @@ export default function App() {
 
   return (
     <FeedbackProvider>
-      <div className={`app ${menuOpen ? 'menu-open' : ''}`}>
+      <div className={`app ${menuOpen ? 'menu-open' : ''}${collapsed ? ' nav-collapsed' : ''}`}>
         <Sidebar
           forms={forms}
           selectedId={selectedId}
@@ -139,6 +151,8 @@ export default function App() {
             goHome()
             setMenuOpen(false)
           }}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleNav}
         />
         <div className="scrim" onClick={() => setMenuOpen(false)} />
 
