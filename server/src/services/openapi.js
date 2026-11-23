@@ -189,16 +189,34 @@ function authFromSecuritySchemes(schemes) {
   return null;
 }
 
+/**
+ * API gateway keys (Azure APIM) belong to the module, not to the form: the request gets a {{var:…}}
+ * placeholder and the value from the file is kept as an encrypted module variable.
+ */
+const GATEWAY_KEY = /^(subscription-key|ocp-apim-subscription-key)$/i;
+
 const ICON_BY_METHOD = { GET: 'globe', POST: 'document', PUT: 'document', PATCH: 'document', DELETE: 'document' };
 
 /* ---------------- plan ---------------- */
 
 /**
- * @returns {{ moduleName, auth, authSource, variables: string[], requests: Array<{ key, name, method, url, definition }> }}
+ * @returns {{ moduleName, auth, authSource, variables: string[], variableValues, requests: Array<{ key, name, method, url, definition }> }}
  */
 export function buildImportPlan(doc, { moduleName } = {}) {
   const deref = makeResolver(doc);
   const variables = new Set();
+  const variableValues = {};
+  const keyVarByValue = new Map();
+  /** one module variable per distinct key value: subscriptionKey, subscriptionKey2, … */
+  const gatewayKeyVar = (value) => {
+    const v = value === undefined || value === null ? '' : String(value);
+    if (keyVarByValue.has(v)) return keyVarByValue.get(v);
+    const name = keyVarByValue.size === 0 ? 'subscriptionKey' : `subscriptionKey${keyVarByValue.size + 1}`;
+    keyVarByValue.set(v, name);
+    variables.add(name);
+    variableValues[name] = v;
+    return name;
+  };
   const requests = [];
   let auth = null;
   let authSource = null;
@@ -236,7 +254,11 @@ export function buildImportPlan(doc, { moduleName } = {}) {
       for (const p of [...(item.parameters ?? []), ...(op.parameters ?? [])].reverse()) {
         if (!p?.name || seen.has(`${p.in}:${p.name}`)) continue;
         seen.add(`${p.in}:${p.name}`);
-        if (p.in === 'path' || p.in === 'query') {
+        if ((p.in === 'query' || p.in === 'header') && GATEWAY_KEY.test(p.name)) {
+          const ref = `{{var:${gatewayKeyVar(p.example ?? p.schema?.default ?? p.schema?.example)}}}`;
+          if (p.in === 'query') query[p.name] = ref;
+          else headers[p.name] = ref;
+        } else if (p.in === 'path' || p.in === 'query') {
           properties[p.name] = { title: p.name, ...toFormSchema(p.schema ?? { type: 'string' }), ...(p.description ? { description: p.description } : {}) };
           if (p.in === 'path' || p.required) required.push(p.name);
           if (p.in === 'query') query[p.name] = `{{form.${p.name}}}`;
@@ -305,5 +327,5 @@ export function buildImportPlan(doc, { moduleName } = {}) {
   for (const v of Object.values(auth ?? {})) collectVariables(v, variables);
 
   const name = String(moduleName || doc.info?.title || 'Imported API').trim().slice(0, 60);
-  return { moduleName: name, auth: auth ?? { type: 'none' }, authSource, variables: [...variables], requests };
+  return { moduleName: name, auth: auth ?? { type: 'none' }, authSource, variables: [...variables], variableValues, requests };
 }

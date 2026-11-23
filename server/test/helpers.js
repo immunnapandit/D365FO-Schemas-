@@ -15,6 +15,7 @@ export async function startUpstream() {
   // no sign-in: records the body as received, for body-shape tests
   app.post('/echo', (req, res) => {
     state.lastBody = req.body;
+    state.lastQuery = req.query;
     res.json({ ok: true });
   });
   app.post('/tenant/oauth2/v2.0/token', (req, res) => {

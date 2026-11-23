@@ -191,11 +191,16 @@ What the import does:
 - Every other request becomes a form: method and URL from the file; path and query parameters become fields; the JSON
   request body schema becomes the form. When the body only has an example (common in Postman exports), the fields are
   built from the example. `@odata.*` and read-only properties are left out.
+- API gateway keys (Azure APIM `subscription-key` query parameter or `Ocp-Apim-Subscription-Key` header) are **not**
+  form fields. The value from the file is kept as a hidden, encrypted module variable (`subscriptionKey`, and
+  `subscriptionKey2`, `subscriptionKey3`, … when requests use different keys) and the request sends
+  `{{var:subscriptionKey}}`. Change the key once on the module page.
 - Importing the same file again updates the forms with the same name (a new version each) instead of adding copies.
   The module's sign-in is kept.
 - The imported file is kept (encrypted) with the module. Admins can view, download and edit it on the module page
   (**Imported file**) and update the forms from it. Secret values in the file (client secret, password, API key,
-  tokens, `client_secret=` in url-encoded bodies) are shown as `••••••••`; when the edited file is saved, the stored
+  tokens, `client_secret=` in url-encoded bodies, and the `example` of a `subscription-key` or `Authorization`
+  parameter) are shown as `••••••••`; when the edited file is saved, the stored
   values are put back, so leave the marker as it is or type a new value over it. The download has the values hidden too.
 
 ### Import a Postman collection

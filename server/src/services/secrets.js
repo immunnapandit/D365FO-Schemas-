@@ -12,7 +12,7 @@ import { config } from '../config.js';
 export const MASK = '••••••••';
 const PREFIX = 'enc:v1:';
 const SECRET_KEY = /secret|password|passwd|^token$|^value$|api[-_]?key|subscription[-_]?key|^authorization$/i;
-const ONLY_PLACEHOLDERS = /^(\s*\{\{\s*(env|kv):[^}]+\}\}\s*)+$/;
+const ONLY_PLACEHOLDERS = /^(\s*\{\{\s*(env|kv|var):[^}]+\}\}\s*)+$/;
 
 let key = null;
 function getKey() {

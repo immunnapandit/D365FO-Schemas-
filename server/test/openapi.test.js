@@ -249,3 +249,71 @@ ${Array.from({ length: 40 }, (_, k) => `                field${k}: { type: strin
   const raw = await getDb()('modules').where({ id: done.module.id }).first();
   assert.ok(raw.spec.length < 1_600_000, `stored ${raw.spec.length} characters`);
 });
+
+test('API gateway keys (APIM subscription-key) go to the module, hidden, not onto the form', async () => {
+  const content = `openapi: 3.0.0
+info: { title: Gateway Key Test, version: '1' }
+paths:
+  /echo:
+    post:
+      summary: Send with key
+      parameters:
+        - name: subscription-key
+          in: query
+          required: true
+          schema: { type: string }
+          example: k-111aaa
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+          example: a55c-secret-token
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { item: { type: string } } }
+      servers: [{ url: '${up.url}' }]
+  /echo2:
+    post:
+      summary: Other product
+      parameters:
+        - name: Ocp-Apim-Subscription-Key
+          in: header
+          required: true
+          schema: { type: string }
+          example: k-222bbb
+      servers: [{ url: '${up.url}' }]
+`;
+  const done = (await request(app).post('/api/import/openapi').send({ content, commit: true, fileName: 'gw.yaml' }).expect(201)).body;
+  const mod = done.module;
+  assert.equal(mod.variables.subscriptionKey, '••••••••', 'key is a hidden module variable');
+  assert.equal(mod.variables.subscriptionKey2, '••••••••');
+  const raw = await getDb()('modules').where({ id: mod.id }).first();
+  assert.doesNotMatch(raw.variables ?? JSON.stringify(raw), /k-111aaa/, 'key is stored encrypted');
+
+  const forms = (await request(app).get('/api/forms').expect(200)).body.filter((f) => f.category === 'Gateway Key Test');
+  const send = forms.find((f) => f.name === 'Send with key');
+  const full = (await request(app).get(`/api/forms/${send.id}`).expect(200)).body;
+  assert.equal(full.formSchema.properties['subscription-key'], undefined, 'no form field for the key');
+  assert.ok(!(full.formSchema.required ?? []).includes('subscription-key'));
+  assert.equal(full.api.query['subscription-key'], '{{var:subscriptionKey}}');
+  const other = (await request(app).get(`/api/forms/${forms.find((f) => f.name === 'Other product').id}`).expect(200)).body;
+  assert.equal(other.api.headers['Ocp-Apim-Subscription-Key'], '{{var:subscriptionKey2}}');
+
+  const run = (await request(app).post(`/api/forms/${send.id}/execute`).send({ formData: { item: 'A1' } }).expect(200)).body;
+  assert.equal(run.ok, true, JSON.stringify(run));
+  assert.equal(up.state.lastQuery['subscription-key'], 'k-111aaa', 'the key from the file is sent');
+  assert.deepEqual(up.state.lastBody, { item: 'A1' });
+
+  // the stored file is shown without the key or the Authorization token, and saves back unchanged
+  const shown = (await request(app).get(`/api/modules/${mod.id}/spec`).expect(200)).body.content;
+  assert.doesNotMatch(shown, /k-111aaa|k-222bbb|a55c-secret-token/);
+  const again = (
+    await request(app).post('/api/import/openapi').send({ content: shown, moduleName: 'Gateway Key Test', commit: true, fileName: 'gw.yaml' }).expect(201)
+  ).body;
+  const stored = (await request(app).get(`/api/modules/${again.module.id}/spec`).expect(200)).body.content;
+  assert.equal(stored, shown);
+  const modules = await import('../src/repositories/modules.js');
+  const back = await modules.getModuleSpec(again.module.id);
+  assert.equal(back.content, content, 'the real keys were put back from the stored file');
+});

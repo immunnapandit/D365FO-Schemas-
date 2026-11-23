@@ -9,6 +9,7 @@ import { MASK } from './secrets.js';
  *   "client_secret": "abc"        client_secret: abc          (JSON and YAML key: value)
  *   { "key": "clientSecret", "value": "abc" }                  (Postman variables and auth entries)
  *   client_secret=abc&...                                      (url-encoded bodies, in raw strings)
+ *   - name: subscription-key … example: abc                    (OpenAPI parameters: gateway keys, Authorization)
  */
 
 const NAMES = [
@@ -22,7 +23,15 @@ const NAMES = [
   'ocp-apim-subscription-key',
 ].join('|');
 
+/** Parameters whose example value is a secret: gateway keys and Authorization headers. */
+const PARAM_NAMES = 'subscription-key|ocp-apim-subscription-key|authorization';
+
 const PATTERNS = [
+  // OpenAPI parameter (YAML or JSON): name: subscription-key … example: abc   (stops at the next "name:")
+  new RegExp(
+    `['"]?name['"]?\\s*:\\s*['"]?(${PARAM_NAMES})['"]?(?:(?!['"]?name['"]?\\s*:)[\\s\\S]){0,400}?['"]?example['"]?\\s*:[ \\t]*['"]?([^'"\\n]*?)['"]?[ \\t]*(?=[,}\\r\\n]|$)`,
+    'gim',
+  ),
   // Postman: { "key": "clientSecret", "value": "abc" } (type or other fields may sit in between)
   new RegExp(`"key"\\s*:\\s*"(${NAMES})"\\s*,(?:\\s*"(?:type|description|disabled)"\\s*:\\s*(?:"[^"]*"|true|false)\\s*,)*\\s*"value"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'gi'),
   // JSON: "client_secret": "abc"
@@ -33,7 +42,8 @@ const PATTERNS = [
   new RegExp(`(?<![\\w-])(${NAMES})=([^&\\s"'\\\\]+)`, 'gi'),
 ];
 
-const isPlaceholder = (v) => /^\s*(\{\{[^}]*\}\}\s*)+$/.test(v) || /^<[^>]*>$/.test(v.trim());
+// a value that uses a {{variable}} ("{{token}}", "Bearer {{access_token}}") or a <placeholder> is not a secret
+const isPlaceholder = (v) => /\{\{[^}]*\}\}/.test(v) || /^<[^>]*>$/.test(v.trim());
 
 /** Every secret value in the text: where it is, which name it belongs to, and the raw value. */
 export function findSecrets(text) {
