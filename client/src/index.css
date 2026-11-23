@@ -560,3 +560,37 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 /* forms with long lines use the width they get; more again when the menu is collapsed */
 .page:has(.array-lines), .page:has(.array-grid) { max-width: 1240px; }
 .nav-collapsed .page:has(.array-lines), .nav-collapsed .page:has(.array-grid) { max-width: 1480px; }
+
+/* Compact fields, closer to D365 F&O density */
+.rjsf .form-control { min-height: 34px; padding: 5px 10px; font-size: 14px; }
+.rjsf select.form-control { padding-right: 6px; }
+.rjsf .control-label { font-size: 13.5px; margin-bottom: 4px; }
+.rjsf .form-group { margin-bottom: 16px; }
+
+/* Line details: tighter grid of fields */
+.rjsf .line-details-body .form-control { min-height: 32px; padding: 4px 9px; font-size: 13.5px; }
+.rjsf .line-details-body .form-group { margin-bottom: 12px; }
+.rjsf .line-details-body > fieldset,
+.rjsf .line-details-body > .form-group > fieldset { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); column-gap: 14px; }
+
+/* Few fields per line: typed right in the lines grid */
+.lines-editable .lines-grid th { padding-left: 16px; }
+.lines-editable .lines-grid th.num { text-align: left; }
+.lines-editable .lines-grid tbody tr { cursor: default; }
+.lines-editable .lines-grid tbody tr:hover td { background: transparent; }
+.lines-editable .lines-grid tbody tr.is-selected td { background: var(--tint); }
+.lines-grid td.lines-edit { padding: 0; overflow: visible; white-space: normal; height: 42px; }
+.rjsf .lines-edit > fieldset, .rjsf .lines-edit > .form-group > fieldset {
+  display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); align-items: center; }
+.rjsf .lines-edit > .form-group { margin: 0; max-width: none; }
+.rjsf .lines-edit fieldset > legend, .rjsf .lines-edit fieldset > .field-description { display: none; }
+.rjsf .lines-edit fieldset > .form-group { margin: 0; max-width: none; padding: 4px 6px; }
+.rjsf .lines-edit .control-label, .rjsf .lines-edit .field-description, .rjsf .lines-edit .help-block,
+.rjsf .lines-edit .error-detail, .rjsf .lines-edit .checkbox label > span {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rjsf .lines-edit .form-control { min-height: 30px; padding: 3px 9px; font-size: 13.5px; border-radius: 4px; }
+.rjsf .lines-edit .checkbox { margin: 0; padding-left: 10px; display: flex; align-items: center; height: 30px; }
+.rjsf .lines-edit .checkbox label { display: flex; align-items: center; margin: 0; }
+.lines-editable .lines-grid .lines-no { color: var(--ink-soft); }
+.rjsf .form-group:has(> fieldset.array-lines), .rjsf fieldset.array-lines .form-group { max-width: none; }
+.rjsf .lines-edit fieldset > .form-group { max-width: none; }

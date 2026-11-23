@@ -10,6 +10,8 @@ export interface LinesState {
   select: (index: number, focusRow?: boolean) => void
   detailsEl: HTMLElement | null
   title: string
+  /** few fields per line: they are typed right in the grid and there is no details panel */
+  editable: boolean
 }
 
 export const LinesContext = createContext<LinesState | null>(null)

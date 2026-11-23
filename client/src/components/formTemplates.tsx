@@ -9,9 +9,9 @@ import { LinesContext } from '../lib/lines-context'
 import Icon from './Icon'
 
 /**
- * Form parts for lists in a form (e.g. invoices with their line items):
- * - few fields per row: a table edited in place
- * - many fields per row: a lines grid with the key columns and a "Line details" panel for the selected line
+ * Form parts for lists in a form (e.g. invoices with their line items). Lists of lines share one design:
+ * - few fields per line: the lines grid, typed in place
+ * - many fields per line: the lines grid with the key columns and a "Line details" panel for the selected line
  * - anything else: a card per row
  */
 
@@ -42,8 +42,8 @@ export function AddButton({ className, onClick, disabled, id }: IconButtonProps)
 }
 
 /** A list of long rows: lines grid with the key columns, and every field of the selected line below it. */
-function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; fieldCount: number; heading: string }) {
-  const { canAdd, disabled, readonly, fieldPathId, items, onAddClick, formData, registry, schema, columns, fieldCount, heading } = props
+function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; fieldCount: number; heading: string; editable: boolean }) {
+  const { canAdd, disabled, readonly, fieldPathId, items, onAddClick, formData, registry, schema, columns, fieldCount, heading, editable } = props
   const rows = useMemo(() => (Array.isArray(formData) ? formData : []), [formData])
   const [selected, setSelected] = useState(0)
   const [detailsEl, setDetailsEl] = useState<HTMLElement | null>(null)
@@ -92,8 +92,8 @@ function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; f
   const errorCount = rowErrors.filter(Boolean).length
 
   return (
-    <LinesContext.Provider value={{ columns, rows, rowErrors, selected: current, select, detailsEl, title: heading }}>
-      <div className="lines" ref={rootRef}>
+    <LinesContext.Provider value={{ columns, rows, rowErrors, selected: current, select, detailsEl, title: heading, editable }}>
+      <div className={`lines${editable ? ' lines-editable' : ''}`} ref={rootRef}>
         <div className="lines-bar">
           {canAdd && (
             <button type="button" id={buttonId(fieldPathId, 'add')} className="btn btn-sm" onClick={add} disabled={disabled || readonly}>
@@ -104,7 +104,7 @@ function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; f
             {count === 1 ? '1 line' : `${count} lines`}
             {errorCount > 0 && <b className="lines-count-err"> · {errorCount === 1 ? '1 line needs attention' : `${errorCount} lines need attention`}</b>}
           </span>
-          <span className="lines-hint">{fieldCount} fields per line · select a line to edit all of them</span>
+          {!editable && <span className="lines-hint">{fieldCount} fields per line · select a line to edit all of them</span>}
         </div>
         <div className="lines-scroll">
           <table className="lines-grid" style={{ '--cols': columns.length } as CSSProperties}>
@@ -128,7 +128,7 @@ function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; f
             </div>
           )}
         </div>
-        <section className="line-details" ref={setDetailsEl} aria-label="Line details" hidden={count === 0} />
+        {!editable && <section className="line-details" ref={setDetailsEl} aria-label="Line details" hidden={count === 0} />}
       </div>
     </LinesContext.Provider>
   )
@@ -143,32 +143,19 @@ export function ArrayFieldTemplate(props: ArrayFieldTemplateProps) {
   const inTitle = !readonly && !disabled
   const heading = uiOptions.title || title || 'Line'
   return (
-    <fieldset className={`${className ?? ''}${layout.mode === 'inline' ? ' array-grid' : ''}${layout.mode === 'lines' ? ' array-lines' : ''}`} id={fieldPathId.$id}>
+    <fieldset className={`${className ?? ''}${layout.mode !== 'cards' ? ' array-lines' : ''}`} id={fieldPathId.$id}>
       <Title fieldPathId={fieldPathId} title={heading} required={required} schema={schema} uiSchema={uiSchema}
         registry={registry} optionalDataControl={inTitle ? optionalDataControl : undefined} />
       <Description fieldPathId={fieldPathId} description={uiOptions.description || schema.description} schema={schema}
         uiSchema={uiSchema} registry={registry} />
       {!inTitle ? optionalDataControl : undefined}
-      {layout.mode === 'lines' ? (
-        <LinesEditor {...props} columns={layout.columns} fieldCount={layout.fieldCount} heading={heading} />
-      ) : layout.mode === 'inline' ? (
-        <div className="array-grid-scroll">
-          <div className="array-grid-inner" style={{ '--cols': layout.columns.length } as CSSProperties}>
-            <div className="array-grid-head" aria-hidden="true">
-              <span className="array-grid-no">#</span>
-              <div className="array-grid-cols">
-                {layout.columns.map((c) => <span key={c.key} title={c.title}>{c.title}{c.required && <b className="req"> *</b>}</span>)}
-              </div>
-              <span className="array-grid-tools" />
-            </div>
-            {items.length === 0 && <div className="array-grid-empty">No rows yet. Use “Add row” to start.</div>}
-            <div className="array-item-list">{items}</div>
-          </div>
-        </div>
+      {layout.mode !== 'cards' ? (
+        <LinesEditor {...props} columns={layout.columns} fieldCount={layout.mode === 'lines' ? layout.fieldCount : layout.columns.length}
+          heading={heading} editable={layout.mode === 'inline'} />
       ) : (
         <div className="row array-item-list">{items}</div>
       )}
-      {canAdd && layout.mode !== 'lines' && <Add id={buttonId(fieldPathId, 'add')} className="rjsf-array-item-add" onClick={onAddClick}
+      {canAdd && layout.mode === 'cards' && <Add id={buttonId(fieldPathId, 'add')} className="rjsf-array-item-add" onClick={onAddClick}
         disabled={disabled || readonly} uiSchema={uiSchema} registry={registry} />}
     </fieldset>
   )
@@ -179,7 +166,7 @@ function LineRow(props: ArrayFieldItemTemplateProps) {
   const lines = useContext(LinesContext)
   const { children, buttonsProps: b, hasToolbar, index, totalItems } = props
   if (!lines) return null
-  const { columns, rows, rowErrors, selected, select, detailsEl, title } = lines
+  const { columns, rows, rowErrors, selected, select, detailsEl, title, editable } = lines
   const row = (rows[index] ?? {}) as Record<string, unknown>
   const isSelected = selected === index
   const bad = rowErrors[index]
@@ -199,7 +186,9 @@ function LineRow(props: ArrayFieldItemTemplateProps) {
     <tr className={`${isSelected ? 'is-selected' : ''}${bad ? ' has-error' : ''}`} tabIndex={0} aria-selected={isSelected}
       onClick={() => select(index)} onKeyDown={onKey}>
       <td className="lines-no">{bad ? <span className="lines-err" title="This line has an error"><Icon name="alert" /></span> : index + 1}</td>
-      {columns.map((c) => {
+      {editable ? (
+        <td className="lines-edit" colSpan={columns.length} onFocus={() => select(index)}>{children}</td>
+      ) : columns.map((c) => {
         const text = cellText(row[c.key], c)
         return <td key={c.key} className={c.numeric ? 'num' : undefined} title={text || undefined}>{text || <span className="lines-blank" />}</td>
       })}
@@ -208,7 +197,7 @@ function LineRow(props: ArrayFieldItemTemplateProps) {
           <RowButton icon="trash" label={`Remove line ${index + 1}`} danger disabled={off}
             onClick={(e) => { b.onRemoveItem(e); select(Math.min(index, totalItems - 2)) }} />
         )}
-        {isSelected && detailsEl && createPortal(
+        {!editable && isSelected && detailsEl && createPortal(
           <>
             <header className="line-details-head">
               <div className="line-details-title">
@@ -253,23 +242,7 @@ export function ArrayFieldItemTemplate(props: ArrayFieldItemTemplateProps) {
   const { children, buttonsProps: b, hasToolbar, index, totalItems } = props
   const off = b.disabled || b.readonly
   const layout = listLayout(props.schema, props.parentUiSchema?.items as never, props.parentUiSchema)
-  if (layout.mode === 'lines') return <LineRow {...props} />
-  if (layout.mode === 'inline') {
-    return (
-      <div className="array-row array-row-grid">
-        <span className="array-grid-no">{index + 1}</span>
-        <div className="array-row-body">{children}</div>
-        <div className="array-grid-tools">
-          {hasToolbar && (
-            <>
-              {b.hasCopy && <RowButton icon="plus" label="Copy row" onClick={b.onCopyItem} disabled={off} />}
-              {b.hasRemove && <RowButton icon="trash" label="Remove row" danger onClick={b.onRemoveItem} disabled={off} />}
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
+  if (layout.mode !== 'cards') return <LineRow {...props} />
   return (
     <div className="array-row">
       <div className="array-row-head">
