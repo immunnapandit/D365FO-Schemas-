@@ -303,3 +303,32 @@ test('blank sample fields ("" and null) are sent the way the sample sends them',
   await request(app).post(`/api/forms/${form.id}/execute`).send({ formData }).expect(200);
   assert.deepEqual(up.state.lastBody, { req: [{ docNo: 'INV-1', lineItems: [{ lineNo: 1 }, { lineNo: 2, itemCode: 'X' }] }] });
 });
+
+test('folders of a collection and tags of an OpenAPI file become groups in the menu', async () => {
+  const { buildPostmanPlan } = await import('../src/services/postman.js');
+  const plan = buildPostmanPlan({
+    info: { name: 'Groups', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    item: [
+      { name: 'Loose', request: { method: 'GET', url: 'https://x.test/a' } },
+      { name: 'Sales', item: [{ name: 'Orders', item: [{ name: 'Create order', request: { method: 'POST', url: 'https://x.test/o' } }] }] },
+    ],
+  });
+  assert.equal(plan.requests.find((r) => r.name === 'Loose').definition.group, undefined);
+  assert.equal(plan.requests.find((r) => r.name === 'Create order').definition.group, 'Sales');
+  const { buildImportPlan } = await import('../src/services/openapi.js');
+  const o = buildImportPlan({
+    openapi: '3.0.0', info: { title: 'T', version: '1' }, servers: [{ url: 'https://x.test' }],
+    paths: { '/po': { post: { summary: 'PO', tags: ['APIM BRICS'], requestBody: { content: { 'application/json': { schema: {
+      type: 'object', properties: { request_id: { type: 'string' }, type: { type: 'string' }, lines: { type: 'array', items: { type: 'object', properties: { qty: { type: 'integer' }, note: { type: 'string' } } } }, password: { type: 'string' } },
+      example: { request_id: '{{$guid}}', type: 'PO_INBOUND', lines: [{ qty: 2, note: '' }], password: 'secret!' } } } } } } } },
+  });
+  const def = o.requests[0].definition;
+  assert.equal(def.group, 'APIM BRICS');
+  const p = def.formSchema.properties;
+  assert.equal(p.type.default, 'PO_INBOUND', 'the example fills the form');
+  assert.deepEqual(p.lines.default, [{ qty: 2, note: '' }]);
+  assert.equal(p.request_id.default, '{{$guid}}');
+  assert.match(p.request_id.description, /new value/);
+  assert.equal(p.password.default, undefined, 'passwords from the file are not shown in the form');
+  assert.deepEqual(def.api.emptyFields, { lines: [{ note: '' }] });
+});

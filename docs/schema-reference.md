@@ -178,6 +178,32 @@ opens. To choose the grid columns yourself, set them on the list in uiSchema:
 | `network` | host unreachable, timeout, or not in `ALLOWED_HOSTS` |
 | `api` | the target API returned 4xx/5xx. The F&O infolog is taken from `error.innererror`. |
 
+## What an import fills in
+
+- **Example values.** The example of a request body (Postman sample body, OpenAPI `example` on the media type or on the
+  schema) fills the form, lists included, so a request can be sent as it was tested. Fields named like a password,
+  secret, token or key are left empty.
+- **Dynamic values.** `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}` in a form
+  value get a fresh value on every submit, as in Postman. Other `{{...}}` text typed in a field is sent as it is.
+- **Groups.** The top-level folder of a Postman request, or the first tag of an OpenAPI operation, becomes the form's
+  `group`: the menu and the home page show the forms of a module under these groups.
+
+## Workspaces
+
+Modules, forms, imported files and run history belong to a workspace. The browser sends the chosen workspace in the
+`X-Workspace-Id` header; without it the user's first workspace is used (a user without one gets "My workspace").
+
+| API | What it does |
+|---|---|
+| `GET /api/workspaces` | Your workspaces. Admins add `?scope=all` to also get everyone else's (`isMine: false`, `ownerName`) |
+| `POST /api/workspaces` `{ "name" }` | Creates a workspace (names are unique per person, max 60 characters) |
+| `PATCH /api/workspaces/{id}` `{ "name" }` | Renames it (owner or admin) |
+| `DELETE /api/workspaces/{id}` | Hides it with its forms and history (owner or admin). The last workspace of a person cannot be deleted |
+
+A form, module or run of another workspace answers 404, so nobody learns that it exists. Module names are unique
+inside a workspace, so the same collection can be imported into two workspaces with different keys and secrets.
+`allowedRoles` on a form has no effect for the owner of the workspace; it is kept for sharing workspaces later.
+
 ## Modules and OpenAPI import
 
 A **module** groups forms in the sidebar (a form's `category` is its module name) and holds what its forms share:

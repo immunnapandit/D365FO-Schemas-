@@ -173,3 +173,38 @@ paths:
   const list = (await request(app).get('/api/modules').expect(200)).body;
   assert.equal(list.find((m) => m.id === done.module.id).spec.fileName, 'c.yaml');
 });
+
+test('cosmos: workspaces keep forms, modules and history apart; old documents are taken in', { skip }, async () => {
+  const [first] = (await request(app).get('/api/workspaces').expect(200)).body;
+  const vista = (await request(app).post('/api/workspaces').send({ name: 'Vista' }).expect(201)).body;
+  const inVista = { 'X-Workspace-Id': vista.id };
+
+  // same module name in two workspaces
+  const modA = (await request(app).post('/api/modules').send({ name: 'Shared name', auth: { type: 'none' }, variables: { base: 'A' } }).expect(201)).body;
+  const modB = (await request(app).post('/api/modules').set(inVista).send({ name: 'Shared name', auth: { type: 'none' }, variables: { base: 'B' } }).expect(201)).body;
+  assert.notEqual(modA.id, modB.id);
+  assert.equal(modA.workspaceId, first.id);
+  assert.equal(modB.workspaceId, vista.id);
+  await request(app).post('/api/modules').set(inVista).send({ name: 'shared NAME', auth: { type: 'none' } }).expect(409);
+
+  const f = (await request(app).post('/api/forms').set(inVista).send(salesOrderDefinition(up.url, { name: 'Vista order' })).expect(201)).body;
+  assert.ok(!(await request(app).get('/api/forms').expect(200)).body.some((x) => x.id === f.id));
+  assert.ok((await request(app).get('/api/forms').set(inVista).expect(200)).body.some((x) => x.id === f.id));
+  await request(app).get(`/api/forms/${f.id}`).expect(404);
+
+  const run = (await request(app).post(`/api/forms/${f.id}/execute`).set(inVista).send({ formData: { customer: 'US-001', currency: 'USD', company: 'usmf' } }).expect(200)).body;
+  const inVistaHistory = (await request(app).get('/api/executions?scope=all').set(inVista).expect(200)).body;
+  assert.deepEqual(inVistaHistory.map((r) => r.id), [run.executionId]);
+  assert.ok(!(await request(app).get('/api/executions?scope=all').expect(200)).body.some((r) => r.id === run.executionId));
+
+  // documents written before workspaces (no workspaceId) are moved by claimUnassigned
+  await db.cosmosContainer('forms').items.create({ id: 'pre-workspace', name: 'Old', definition: '{}', version: 1, isDeleted: false, createdAt: 'x', updatedAt: 'x' });
+  const ws = await import('../src/repositories/workspaces.js');
+  const moved = await ws.claimUnassigned(first.id);
+  assert.equal(moved.forms, 1);
+  const { resource } = await db.cosmosContainer('forms').item('pre-workspace', 'pre-workspace').read();
+  assert.equal(resource.workspaceId, first.id);
+
+  await request(app).delete(`/api/workspaces/${vista.id}`).expect(204);
+  await request(app).get('/api/forms').set(inVista).expect(404);
+});

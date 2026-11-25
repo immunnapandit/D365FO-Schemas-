@@ -1,4 +1,5 @@
 import { authHeaders, reauthenticate } from './auth'
+import { currentWorkspaceId } from './workspace'
 import type {
   CurrentUser,
   ExecuteResult,
@@ -11,6 +12,7 @@ import type {
   ImportResult,
   ModuleDefinition,
   ModuleSpec,
+  Workspace,
 } from './types'
 
 export class ApiError extends Error {
@@ -37,6 +39,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         Accept: 'application/json',
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
         ...(await authHeaders()),
+        ...(currentWorkspaceId() ? { 'X-Workspace-Id': currentWorkspaceId()! } : {}),
         ...init.headers,
       },
     })
@@ -79,6 +82,12 @@ const post = (body?: unknown): RequestInit => ({ method: 'POST', body: body === 
 export const api = {
   me: () => request<CurrentUser>('/api/me'),
   definitionSchema: () => request<object>('/api/meta/definition-schema'),
+
+  listWorkspaces: (everyone = false) => request<Workspace[]>(`/api/workspaces${everyone ? '?scope=all' : ''}`),
+  createWorkspace: (name: string) => request<Workspace>('/api/workspaces', post({ name })),
+  renameWorkspace: (id: string, name: string) =>
+    request<Workspace>(`/api/workspaces/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteWorkspace: (id: string) => request<void>(`/api/workspaces/${enc(id)}`, { method: 'DELETE' }),
 
   listForms: () => request<FormSummary[]>('/api/forms'),
   getForm: (id: string) => request<FormDefinition>(`/api/forms/${enc(id)}`),

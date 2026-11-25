@@ -28,6 +28,7 @@ export const definitionSchema = {
       description: 'Icon shown next to the form name.',
     },
     category: str('Module the form is listed under in the navigation, e.g. Sales, Procurement.', { maxLength: 60 }),
+    group: str('Group inside the module in the navigation, e.g. a Postman folder or an OpenAPI tag.', { maxLength: 60 }),
     allowedRoles: {
       type: 'array',
       items: { type: 'string', minLength: 1 },

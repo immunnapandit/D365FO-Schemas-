@@ -54,7 +54,7 @@ export default function RunHistory({ formId, user, refreshKey }: Props) {
       <div className="history-bar">
         <span className="muted small">{scope === 'mine' ? 'Your submissions' : 'Submissions by all users'}</span>
         <div className="history-actions">
-          {user.isAdmin && (
+          {user.canEdit && (
             <div className="segmented" role="group" aria-label="Whose runs">
               <button className={scope === 'mine' ? 'on' : ''} onClick={() => setScope('mine')}>Mine</button>
               <button className={scope === 'all' ? 'on' : ''} onClick={() => setScope('all')}>All users</button>

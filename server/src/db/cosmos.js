@@ -5,6 +5,7 @@ import { logger } from '../logger.js';
  * Azure Cosmos DB for NoSQL.
  *
  * Containers (partition key):
+ *   workspaces    /id      one document per workspace (owner + name)
  *   modules       /id      one document per module (sign-in + variables, secrets encrypted)
  *   forms         /id      one document per form (schema definition, secrets encrypted)
  *   formVersions  /formId  one document per saved version
@@ -14,6 +15,7 @@ import { logger } from '../logger.js';
  */
 
 export const CONTAINERS = {
+  workspaces: { id: 'workspaces', partitionKey: '/id' },
   modules: { id: 'modules', partitionKey: '/id' },
   forms: { id: 'forms', partitionKey: '/id' },
   formVersions: { id: 'formVersions', partitionKey: '/formId' },

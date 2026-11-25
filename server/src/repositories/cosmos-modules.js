@@ -10,6 +10,7 @@ function docToModule(d) {
     id: d.id,
     name: d.name,
     description: d.description ?? undefined,
+    workspaceId: d.workspaceId ?? undefined,
     auth: d.auth ?? { type: 'none' },
     variables: d.variables ?? {},
     headers: d.headers ?? {},
@@ -27,12 +28,17 @@ async function readDoc(id) {
   return resource && !resource.isDeleted ? resource : null;
 }
 
-export async function listModules() {
+/** Modules of one workspace (all modules when workspaceId is undefined, for maintenance scripts). */
+export async function listModules(workspaceId) {
+  const inWorkspace =
+    workspaceId === undefined ? '' : workspaceId === null ? ' AND (NOT IS_DEFINED(c.workspaceId) OR IS_NULL(c.workspaceId))' : ' AND c.workspaceId = @ws';
   const { resources } = await modules()
-    .items.query(
-      'SELECT c.id, c.name, c.description, c.auth, c.variables, c.headers, c.version, c.specFileName, c.specUpdatedAt, c.specUpdatedBy, ' +
-        'c.createdAt, c.createdBy, c.updatedAt, c.updatedBy FROM c WHERE c.isDeleted = false ORDER BY c.name',
-    )
+    .items.query({
+      query:
+        'SELECT c.id, c.name, c.description, c.workspaceId, c.auth, c.variables, c.headers, c.version, c.specFileName, c.specUpdatedAt, ' +
+        `c.specUpdatedBy, c.createdAt, c.createdBy, c.updatedAt, c.updatedBy FROM c WHERE c.isDeleted = false${inWorkspace} ORDER BY c.name`,
+      parameters: workspaceId ? [{ name: '@ws', value: workspaceId }] : [],
+    })
     .fetchAll();
   return resources.map(docToModule);
 }
@@ -42,13 +48,14 @@ export async function getModule(id) {
   return d ? docToModule(d) : null;
 }
 
-export async function getModuleByName(name) {
+/** Module names are unique inside a workspace (forms are linked to their module by name). */
+export async function getModuleByName(name, workspaceId) {
   if (!name) return null;
-  return (await listModules()).find((m) => sameName(m.name, name)) ?? null;
+  return (await listModules(workspaceId ?? null)).find((m) => sameName(m.name, name)) ?? null;
 }
 
-export async function createModule(mod, user) {
-  if (await getModuleByName(mod.name)) throw nameTaken(mod.name);
+export async function createModule(mod, user, workspaceId = null) {
+  if (await getModuleByName(mod.name, workspaceId)) throw nameTaken(mod.name);
   const secured = encryptDefinition(mod);
   const ts = now();
   const base = slug(mod.name);
@@ -58,6 +65,7 @@ export async function createModule(mod, user) {
         id: i === 1 ? base : `${base}-${i}`,
         name: secured.name.trim(),
         description: secured.description ?? null,
+        workspaceId,
         auth: secured.auth,
         variables: secured.variables ?? {},
         headers: secured.headers ?? {},
@@ -80,7 +88,7 @@ export async function updateModule(id, mod, expectedVersion, user) {
   const current = await readDoc(id);
   if (!current) throw notFound('Module not found');
   if (expectedVersion !== undefined && Number(expectedVersion) !== Number(current.version)) throw staleConflict(current);
-  if (!sameName(mod.name, current.name) && (await getModuleByName(mod.name))) throw nameTaken(mod.name);
+  if (!sameName(mod.name, current.name) && (await getModuleByName(mod.name, current.workspaceId ?? null))) throw nameTaken(mod.name);
   const merged = encryptDefinition({
     ...mod,
     auth: restoreMasked(mod.auth, current.auth),

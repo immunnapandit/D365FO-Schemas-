@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { badRequest, notFound, conflict, HttpError } from '../http-errors.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireEditor, useWorkspace } from './workspaces.js';
 import * as modules from '../repositories/modules.js';
 import * as forms from '../repositories/forms.js';
 import { validateModule, validateDefinition } from '../services/definition-schema.js';
@@ -14,17 +14,17 @@ import { sameName } from '../repositories/module-common.js';
 /**
  * Modules group forms in the sidebar (forms.category = module name) and hold the sign-in and
  * {{variables}} shared by every form whose sign-in is "Use the module's sign-in".
- * Only admins can see or change them.
+ * They belong to a workspace; the owner of the workspace (or an admin) can see and change them.
  */
 const router = Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-router.use(requireAdmin);
+router.use(useWorkspace, requireEditor);
 
 function moduleFromBody(body) {
   if (!body || typeof body !== 'object') throw badRequest('Request body must be a JSON object');
   // eslint-disable-next-line no-unused-vars
-  const { id, createdAt, createdBy, updatedAt, updatedBy, version, spec, ...mod } = body;
+  const { id, createdAt, createdBy, updatedAt, updatedBy, version, spec, workspaceId, ...mod } = body;
   mod.variables ??= {};
   mod.headers ??= {};
   const problems = validateModule(mod);
@@ -41,21 +41,26 @@ export function decryptModule(mod) {
   }
 }
 
-const formsIn = async (name) => (await forms.listForms()).filter((f) => sameName(f.category, name));
+const formsIn = async (name, workspaceId) => (await forms.listForms(workspaceId)).filter((f) => sameName(f.category, name));
+
+/** The module, if it is in the current workspace. */
+async function loadModule(req) {
+  const mod = await modules.getModule(req.params.id);
+  if (!mod || mod.workspaceId !== req.workspace.id) throw notFound('Module not found');
+  return mod;
+}
 
 router.get(
   '/',
-  wrap(async (_req, res) => {
-    res.json((await modules.listModules()).map(maskDefinition));
+  wrap(async (req, res) => {
+    res.json((await modules.listModules(req.workspace.id)).map(maskDefinition));
   }),
 );
 
 router.get(
   '/:id',
   wrap(async (req, res) => {
-    const mod = await modules.getModule(req.params.id);
-    if (!mod) throw notFound('Module not found');
-    res.json(maskDefinition(mod));
+    res.json(maskDefinition(await loadModule(req)));
   }),
 );
 
@@ -64,7 +69,7 @@ router.post(
   wrap(async (req, res) => {
     const { mod } = moduleFromBody(req.body);
     if (containsMask(mod.auth) || containsMask(mod.variables) || containsMask(mod.headers)) throw badRequest('A new module cannot contain masked secrets (••••••••).');
-    const created = await modules.createModule(mod, req.user);
+    const created = await modules.createModule(mod, req.user, req.workspace.id);
     req.log.info({ moduleId: created.id }, 'module created');
     res.status(201).json(maskDefinition(created));
   }),
@@ -75,15 +80,14 @@ router.put(
   wrap(async (req, res) => {
     const { mod, version } = moduleFromBody(req.body);
     if (version === undefined) throw badRequest('"version" is required so concurrent edits can be detected.');
-    const before = await modules.getModule(req.params.id);
-    if (!before) throw notFound('Module not found');
+    const before = await loadModule(req);
     const updated = await modules.updateModule(req.params.id, mod, version, req.user);
     // renamed -> move its forms along (they are linked by name)
     if (before.name !== updated.name) {
-      for (const f of await formsIn(before.name)) {
+      for (const f of await formsIn(before.name, req.workspace.id)) {
         const full = await forms.getForm(f.id);
         // eslint-disable-next-line no-unused-vars
-        const { id, version: v, createdAt, createdBy, updatedAt, updatedBy, ...def } = full;
+        const { id, version: v, createdAt, createdBy, updatedAt, updatedBy, workspaceId, ...def } = full;
         await forms.updateForm(f.id, { ...def, category: updated.name }, v, req.user);
       }
     }
@@ -96,9 +100,8 @@ router.put(
 router.delete(
   '/:id',
   wrap(async (req, res) => {
-    const mod = await modules.getModule(req.params.id);
-    if (!mod) throw notFound('Module not found');
-    const inside = await formsIn(mod.name);
+    const mod = await loadModule(req);
+    const inside = await formsIn(mod.name, req.workspace.id);
     if (inside.length) throw conflict(`The module still has ${inside.length} form(s). Delete or move them first.`);
     await modules.deleteModule(mod.id, req.user);
     res.status(204).end();
@@ -109,8 +112,7 @@ router.delete(
 router.get(
   '/:id/spec',
   wrap(async (req, res) => {
-    const mod = await modules.getModule(req.params.id);
-    if (!mod) throw notFound('Module not found');
+    const mod = await loadModule(req);
     let spec;
     try {
       spec = await modules.getModuleSpec(mod.id);
@@ -127,8 +129,7 @@ router.get(
 router.post(
   '/:id/test-auth',
   wrap(async (req, res) => {
-    const mod = await modules.getModule(req.params.id);
-    if (!mod) throw notFound('Module not found');
+    const mod = await loadModule(req);
     const result = await testAuth({ auth: { type: 'module' }, category: mod.name }, decryptModule(mod));
     res.json({ ...result, requestId: req.id });
   }),
@@ -141,7 +142,7 @@ export default router;
 const MAX_SPEC_CHARS = 10_000_000; // the file is stored compressed (see packSpec), so 10 MB of YAML or JSON fits
 
 export const importRouter = Router();
-importRouter.use(requireAdmin);
+importRouter.use(useWorkspace, requireEditor);
 
 function stripOrder(uiSchema) {
   if (!uiSchema || typeof uiSchema !== 'object') return undefined;
@@ -163,7 +164,7 @@ importRouter.post(
     if (typeof content === 'string' && content.length > MAX_SPEC_CHARS) throw badRequest('The file is too large (max 10 MB).');
     // the file was edited in the app: its secrets were shown hidden, so take them from the stored file again
     if (typeof content === 'string' && content.includes(MASK)) {
-      const target = typeof moduleName === 'string' && moduleName.trim() ? await modules.getModuleByName(moduleName.trim()) : null;
+      const target = typeof moduleName === 'string' && moduleName.trim() ? await modules.getModuleByName(moduleName.trim(), req.workspace.id) : null;
       const stored = target ? await modules.getModuleSpec(target.id).catch(() => null) : null;
       const restored = restoreSpecContent(content, stored?.content);
       if (restored.missing.length) {
@@ -181,8 +182,8 @@ importRouter.post(
       throw e;
     }
     if (!plan.moduleName) throw badRequest('Give the module a name.');
-    const existingModule = await modules.getModuleByName(plan.moduleName);
-    const existingForms = existingModule ? await formsIn(existingModule.name) : [];
+    const existingModule = await modules.getModuleByName(plan.moduleName, req.workspace.id);
+    const existingForms = existingModule ? await formsIn(existingModule.name, req.workspace.id) : [];
     const findForm = (name) => existingForms.find((f) => sameName(f.name, name));
 
     const selected = Array.isArray(include) ? plan.requests.filter((r) => include.includes(r.key)) : plan.requests;
@@ -225,7 +226,7 @@ importRouter.post(
     const fileVars = Object.fromEntries(plan.variables.map((v) => [v, plan.variableValues?.[v] ?? '']));
     let mod = existingModule;
     if (!mod) {
-      mod = await modules.createModule({ name: plan.moduleName, auth: plan.auth, variables: fileVars }, req.user);
+      mod = await modules.createModule({ name: plan.moduleName, auth: plan.auth, variables: fileVars }, req.user, req.workspace.id);
     } else {
       const variables = { ...mod.variables };
       for (const [k, v] of Object.entries(fileVars)) if (!variables[k]) variables[k] = v;
@@ -267,7 +268,7 @@ importRouter.post(
         const f = await forms.updateForm(full.id, def, full.version, req.user, 'import');
         updated.push({ id: f.id, name: f.name });
       } else {
-        const f = await forms.createForm({ ...r.definition, category: mod.name }, req.user);
+        const f = await forms.createForm({ ...r.definition, category: mod.name }, req.user, req.workspace.id);
         created.push({ id: f.id, name: f.name });
       }
     }

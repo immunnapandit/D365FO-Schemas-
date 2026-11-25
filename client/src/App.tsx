@@ -4,13 +4,15 @@ import FormRunner from './components/FormRunner'
 import SchemaEditor from './components/SchemaEditor'
 import ModulePage from './components/ModulePage'
 import ImportPage from './components/ImportPage'
+import WorkspacesPage from './components/WorkspacesPage'
 import { api, ApiError } from './lib/api'
 import { canSignOut, initAuth, signOut } from './lib/auth'
-import { groupByModule } from './lib/modules'
+import { groupByModule, groupInModule } from './lib/modules'
 import { useNarrow } from './lib/use-narrow'
+import { currentWorkspaceId, setCurrentWorkspaceId } from './lib/workspace'
 import { FeedbackProvider } from './components/Feedback'
 import Icon from './components/Icon'
-import type { CurrentUser, FormDefinition, FormSummary } from './lib/types'
+import type { CurrentUser, FormDefinition, FormSummary, Workspace } from './lib/types'
 
 type View =
   | { kind: 'welcome' }
@@ -19,13 +21,28 @@ type View =
   | { kind: 'new'; def: FormDefinition | null }
   | { kind: 'module'; name: string }
   | { kind: 'import' }
+  | { kind: 'workspaces' }
 
-function viewFromHash(): View {
-  const m = location.hash.match(/^#\/form\/(.+)$/)
-  if (m) return { kind: 'run', id: decodeURIComponent(m[1]) }
-  const mod = location.hash.match(/^#\/module\/(.+)$/)
-  if (mod) return { kind: 'module', name: decodeURIComponent(mod[1]) }
-  return { kind: 'welcome' }
+/** Links look like #/w/<workspace>/form/<form>, so a shared or refreshed link opens the right workspace. */
+function fromHash(): { view: View; workspaceId: string | null } {
+  const ws = location.hash.match(/^#\/w\/([^/]+)/)
+  const workspaceId = ws ? decodeURIComponent(ws[1]) : null
+  const rest = ws ? location.hash.slice(ws[0].length) : location.hash.replace(/^#/, '')
+  const m = rest.match(/^\/form\/(.+)$/)
+  if (m) return { view: { kind: 'run', id: decodeURIComponent(m[1]) }, workspaceId }
+  const mod = rest.match(/^\/module\/(.+)$/)
+  if (mod) return { view: { kind: 'module', name: decodeURIComponent(mod[1]) }, workspaceId }
+  if (rest === '/workspaces') return { view: { kind: 'workspaces' }, workspaceId }
+  return { view: { kind: 'welcome' }, workspaceId }
+}
+
+/** The workspace to open: the one asked for (link or last used) if the user can open it, else their first. */
+function pickWorkspace(list: Workspace[], wanted: (string | null)[]): Workspace | null {
+  for (const id of wanted) {
+    const w = id && list.find((x) => x.id === id)
+    if (w) return w
+  }
+  return list.find((w) => w.isMine) ?? list[0] ?? null
 }
 
 type Boot = { phase: 'loading' } | { phase: 'error'; message: string; status?: number } | { phase: 'ready'; user: CurrentUser }
@@ -36,6 +53,8 @@ export default function App() {
   const [formsLoading, setFormsLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [view, setView] = useState<View>({ kind: 'welcome' })
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try { return localStorage.getItem('sf.navCollapsed') === '1' } catch { return false }
@@ -49,24 +68,58 @@ export default function App() {
     })
   }
 
-  const refresh = useCallback(async () => {
+  const selectWorkspace = useCallback((w: Workspace | null) => {
+    setCurrentWorkspaceId(w?.id ?? null)
+    setWorkspaceId(w?.id ?? null)
+  }, [])
+
+  const loadWorkspaces = useCallback(async (isAdmin: boolean) => {
+    const list = await api.listWorkspaces(isAdmin)
+    setWorkspaces(list)
+    return list
+  }, [])
+
+  const refresh = useCallback(async (): Promise<void> => {
     try {
       setForms(await api.listForms())
       setListError(null)
     } catch (e) {
-      setListError((e as Error).message)
+      const err = e as ApiError
+      if (err.code === 'workspace_not_found') {
+        // the workspace was deleted or is no longer ours: go to the user's first workspace
+        const list = await api.listWorkspaces()
+        setWorkspaces((prev) => [...list, ...prev.filter((w) => !w.isMine && list.every((x) => x.id !== w.id))])
+        const first = pickWorkspace(list, [])
+        setCurrentWorkspaceId(first?.id ?? null)
+        setWorkspaceId(first?.id ?? null)
+        setView({ kind: 'welcome' })
+        if (first) {
+          try {
+            setForms(await api.listForms())
+            setListError(null)
+            return
+          } catch (again) {
+            setListError((again as Error).message)
+            return
+          }
+        }
+      }
+      setListError(err.message)
     } finally {
       setFormsLoading(false)
     }
   }, [])
 
-  // sign in, then load the user and the forms
+  // sign in, then load the user, the workspaces and the forms
   useEffect(() => {
     ;(async () => {
       try {
         await initAuth()
         const user = await api.me()
-        setView(viewFromHash())
+        const fromLink = fromHash()
+        const list = await loadWorkspaces(user.isAdmin)
+        selectWorkspace(pickWorkspace(list, [fromLink.workspaceId, currentWorkspaceId()]))
+        setView(fromLink.view)
         setBoot({ phase: 'ready', user })
         await refresh()
       } catch (e) {
@@ -74,21 +127,22 @@ export default function App() {
         setBoot({ phase: 'error', message: err.message, status: err.status })
       }
     })()
-  }, [refresh])
+  }, [refresh, loadWorkspaces, selectWorkspace])
 
   // keep the URL in sync so a refresh / shared link opens the same form
   useEffect(() => {
-    if (boot.phase !== 'ready') return
+    if (boot.phase !== 'ready' || !workspaceId) return
+    const ws = `#/w/${encodeURIComponent(workspaceId)}`
     const hash =
       view.kind === 'run'
-        ? `#/form/${encodeURIComponent(view.id)}`
+        ? `${ws}/form/${encodeURIComponent(view.id)}`
         : view.kind === 'module'
-          ? `#/module/${encodeURIComponent(view.name)}`
-          : view.kind === 'welcome'
-            ? ''
-            : location.hash
-    if (hash !== location.hash) history.replaceState(null, '', hash || location.pathname)
-  }, [view, boot.phase])
+          ? `${ws}/module/${encodeURIComponent(view.name)}`
+          : view.kind === 'workspaces'
+            ? `${ws}/workspaces`
+            : ws
+    if (hash !== location.hash) history.replaceState(null, '', hash)
+  }, [view, boot.phase, workspaceId])
 
   const goHome = useCallback(() => setView({ kind: 'welcome' }), [])
 
@@ -114,7 +168,8 @@ export default function App() {
     )
   }
 
-  const user = boot.user
+  const workspace = workspaces.find((w) => w.id === workspaceId) ?? null
+  const user: CurrentUser = { ...boot.user, canEdit: Boolean(workspace?.canEdit) }
   const selectedId = view.kind === 'run' ? view.id : view.kind === 'edit' ? view.def.id ?? null : null
 
   function open(id: string) {
@@ -124,6 +179,46 @@ export default function App() {
   function newForm(def: FormDefinition | null = null) {
     setView({ kind: 'new', def })
     setMenuOpen(false)
+  }
+
+  function switchWorkspace(id: string) {
+    const w = workspaces.find((x) => x.id === id)
+    if (!w) return
+    selectWorkspace(w)
+    setForms([])
+    setFormsLoading(true)
+    setListError(null)
+    setView({ kind: 'welcome' })
+    setMenuOpen(false)
+    void refresh()
+  }
+  async function createWorkspace(name: string) {
+    const created = await api.createWorkspace(name)
+    setWorkspaces((prev) => [...prev, created].sort((a, b) => Number(b.isMine) - Number(a.isMine) || a.name.localeCompare(b.name)))
+    selectWorkspace(created)
+    setForms([])
+    setFormsLoading(true)
+    setListError(null)
+    setView({ kind: 'welcome' })
+    setMenuOpen(false)
+    await refresh()
+  }
+  async function renameWorkspace(id: string, name: string) {
+    const renamed = await api.renameWorkspace(id, name)
+    setWorkspaces((prev) => prev.map((w) => (w.id === id ? renamed : w)))
+  }
+  async function deleteWorkspace(id: string) {
+    await api.deleteWorkspace(id)
+    const rest = workspaces.filter((w) => w.id !== id)
+    setWorkspaces(rest)
+    if (id === workspaceId) {
+      const next = pickWorkspace(rest, [])
+      selectWorkspace(next)
+      setForms([])
+      setFormsLoading(true)
+      await refresh()
+      setView({ kind: 'workspaces' })
+    }
   }
 
   const categories = [...new Set(forms.map((f) => f.category).filter((c): c is string => !!c))].sort()
@@ -153,6 +248,14 @@ export default function App() {
           }}
           collapsed={collapsed}
           onToggleCollapsed={toggleNav}
+          workspaces={workspaces}
+          workspace={workspace}
+          onSwitchWorkspace={switchWorkspace}
+          onCreateWorkspace={createWorkspace}
+          onManageWorkspaces={() => {
+            setView({ kind: 'workspaces' })
+            setMenuOpen(false)
+          }}
         />
         <div className="scrim" onClick={() => setMenuOpen(false)} />
 
@@ -167,16 +270,21 @@ export default function App() {
             <div className="page">
               <header className="page-head">
                 <div className="page-title">
-                  <h1>Forms</h1>
+                  <h1>{workspace?.name ?? 'Forms'}</h1>
                   <p className="lede">
-                    {forms.length
-                      ? 'Choose a form, fill it in and submit it to the target system.'
-                      : user.isAdmin
-                        ? 'Create the first form to get started.'
-                        : 'No forms are available to you yet. Ask an administrator for access.'}
+                    {formsLoading
+                      ? 'Loading forms…'
+                      : forms.length
+                        ? 'Choose a form, fill it in and submit it to the target system.'
+                        : user.canEdit
+                          ? 'This workspace is empty. Import a Postman collection or an OpenAPI file, or create a form.'
+                          : 'No forms are available to you yet.'}
                   </p>
+                  {workspace && !workspace.isMine && (
+                    <p className="banner banner-info ws-banner">You are in {workspace.ownerName ?? 'another person'}’s workspace. Changes you make are saved there.</p>
+                  )}
                 </div>
-                {user.isAdmin && (
+                {user.canEdit && (
                   <div className="actions">
                     <button className="btn" onClick={() => setView({ kind: 'import' })}><Icon name="upload" size={16} /> Import collection</button>
                     <button className="btn btn-primary" onClick={() => newForm()}><Icon name="plus" size={16} /> New form</button>
@@ -185,20 +293,27 @@ export default function App() {
               </header>
               {groupByModule(forms).map(([module, items]) => (
                 <section key={module} className="directory">
-                  <h2>{module}</h2>
-                  <ul>
-                    {items.map((f) => (
-                      <li key={f.id}>
-                        <button onClick={() => open(f.id)}>
-                          <span className="form-glyph"><Icon name={f.icon} size={18} /></span>
-                          <span className="directory-text">
-                            <strong>{f.name}</strong>
-                            {f.description && <span>{f.description}</span>}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <h2>
+                    {module} <span className="directory-count">{items.length === 1 ? '1 form' : `${items.length} forms`}</span>
+                  </h2>
+                  {groupInModule(items).map(({ group, forms: list }) => (
+                    <div key={group ?? ''} className="directory-group">
+                      {group && <h3>{group} <span className="directory-count">{list.length}</span></h3>}
+                      <ul>
+                        {list.map((f) => (
+                          <li key={f.id}>
+                            <button onClick={() => open(f.id)} title={f.description || f.name}>
+                              <span className="form-glyph"><Icon name={f.icon} size={18} /></span>
+                              <span className="directory-text">
+                                <strong>{f.name}</strong>
+                                {f.description && <span>{f.description}</span>}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </section>
               ))}
             </div>
@@ -219,7 +334,7 @@ export default function App() {
             />
           )}
 
-          {view.kind === 'module' && user.isAdmin && (
+          {view.kind === 'module' && user.canEdit && (
             <ModulePage
               key={view.name}
               name={view.name}
@@ -236,7 +351,7 @@ export default function App() {
             />
           )}
 
-          {view.kind === 'import' && user.isAdmin && (
+          {view.kind === 'import' && user.canEdit && (
             <ImportPage
               onCancel={goHome}
               onDone={async (moduleName) => {
@@ -246,7 +361,7 @@ export default function App() {
             />
           )}
 
-          {(view.kind === 'edit' || view.kind === 'new') && user.isAdmin && (
+          {(view.kind === 'edit' || view.kind === 'new') && user.canEdit && (
             <SchemaEditor
               key={view.kind === 'edit' ? `edit-${view.def.id}-${view.def.version}` : `new-${view.def?.name ?? ''}`}
               mode={view.kind}
@@ -263,6 +378,20 @@ export default function App() {
                 await refresh()
                 setView({ kind: 'welcome' })
               }}
+            />
+          )}
+          {view.kind === 'workspaces' && (
+            <WorkspacesPage
+              workspaces={workspaces}
+              currentId={workspaceId}
+              isAdmin={user.isAdmin}
+              onOpen={switchWorkspace}
+              onCreate={async (name) => {
+                await createWorkspace(name)
+                setView({ kind: 'workspaces' })
+              }}
+              onRename={renameWorkspace}
+              onDelete={deleteWorkspace}
             />
           )}
         </main>

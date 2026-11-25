@@ -7,6 +7,8 @@ import * as m001 from './migrations/001_initial.js';
 import * as m002 from './migrations/002_form_category.js';
 import * as m003 from './migrations/003_modules.js';
 import * as m004 from './migrations/004_module_spec.js';
+import * as m005 from './migrations/005_workspaces.js';
+import * as m006 from './migrations/006_form_group.js';
 import { NodeSqliteClient } from './node-sqlite-client.js';
 
 // Migrations are listed in code (not read from disk) so they work the same in dev, tests and Docker.
@@ -15,6 +17,8 @@ const migrations = [
   { name: '002_form_category', module: m002 },
   { name: '003_modules', module: m003 },
   { name: '004_module_spec', module: m004 },
+  { name: '005_workspaces', module: m005 },
+  { name: '006_form_group', module: m006 },
 ];
 
 const migrationSource = {

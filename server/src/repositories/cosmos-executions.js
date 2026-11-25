@@ -35,6 +35,7 @@ export async function recordExecution({ form, user, result, requestId }) {
     formId: form.id,
     formName: form.name,
     formVersion: form.version,
+    workspaceId: form.workspaceId ?? null,
     userId: user?.id ?? null,
     userName: user?.name ?? null,
     ok: !!result.ok,
@@ -59,6 +60,7 @@ function toSummary(r) {
     formId: r.formId,
     formName: r.formName,
     formVersion: r.formVersion ?? undefined,
+    workspaceId: r.workspaceId ?? undefined,
     userId: r.userId,
     userName: r.userName,
     ok: Boolean(r.ok),
@@ -72,13 +74,17 @@ function toSummary(r) {
 }
 
 const SUMMARY_FIELDS =
-  'c.id, c.formId, c.formName, c.formVersion, c.userId, c.userName, c.ok, c.stage, c.httpStatus, c.message, c.durationMs, c.requestId, c.createdAt';
+  'c.id, c.formId, c.formName, c.formVersion, c.workspaceId, c.userId, c.userName, c.ok, c.stage, c.httpStatus, c.message, c.durationMs, c.requestId, c.createdAt';
 
-/** userId = only this user's runs (normal users); undefined = everyone's (admins). */
-export async function listExecutions({ formId, userId, limit = 50, before }) {
+/** userId = only this user's runs; undefined = everyone's. workspaceId = runs of that workspace's forms. */
+export async function listExecutions({ workspaceId, formId, userId, limit = 50, before }) {
   const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const where = [];
   const parameters = [{ name: '@take', value: take }];
+  if (workspaceId !== undefined) {
+    where.push('c.workspaceId = @ws');
+    parameters.push({ name: '@ws', value: workspaceId });
+  }
   if (formId) {
     where.push('c.formId = @formId');
     parameters.push({ name: '@formId', value: formId });

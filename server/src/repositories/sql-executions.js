@@ -26,6 +26,7 @@ export async function recordExecution({ form, user, result, requestId }) {
     form_id: form.id,
     form_name: form.name,
     form_version: form.version,
+    workspace_id: form.workspaceId ?? null,
     user_id: user?.id ?? null,
     user_name: user?.name ?? null,
     ok: !!result.ok,
@@ -49,6 +50,7 @@ function toSummary(r) {
     formId: r.form_id,
     formName: r.form_name,
     formVersion: r.form_version === null ? undefined : Number(r.form_version),
+    workspaceId: r.workspace_id ?? undefined,
     userId: r.user_id,
     userName: r.user_name,
     ok: Boolean(r.ok),
@@ -61,16 +63,17 @@ function toSummary(r) {
   };
 }
 
-/** userId = only this user's runs (normal users); undefined = everyone's (admins). */
-export async function listExecutions({ formId, userId, limit = 50, before }) {
+/** userId = only this user's runs; undefined = everyone's. workspaceId = runs of that workspace's forms. */
+export async function listExecutions({ workspaceId, formId, userId, limit = 50, before }) {
   const q = getDb()('executions')
     .select(
       'id', 'form_id', 'form_name', 'form_version', 'user_id', 'user_name', 'ok', 'stage',
-      'http_status', 'message', 'duration_ms', 'request_id', 'created_at',
+      'http_status', 'message', 'duration_ms', 'request_id', 'created_at', 'workspace_id',
     )
     .orderBy('created_at', 'desc')
     .orderBy('id', 'desc')
     .limit(Math.min(Math.max(Number(limit) || 50, 1), 200));
+  if (workspaceId !== undefined) q.where({ workspace_id: workspaceId });
   if (formId) q.where({ form_id: formId });
   if (userId) q.where({ user_id: userId });
   if (before) q.where('created_at', '<', before);

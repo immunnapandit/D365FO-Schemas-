@@ -7,7 +7,7 @@ builds, tests and deploys on every push to `main`.
 ```
 Browser ──► Web App (App Service Authentication: Microsoft sign-in)
                └─ Node 22: server/src/index.js  ── serves client/dist (React)
-                    ├─ Cosmos DB  (modules, forms, formVersions, executions)
+                    ├─ Cosmos DB  (workspaces, modules, forms, formVersions, executions)
                     └─ D365 F&O / other APIs  (token per module, client credentials)
 GitHub (push to main) ──► GitHub Actions: lint, test, build, zip ──► Web App
 ```
@@ -79,6 +79,7 @@ With an identity the app does not create containers, so create them first (Data 
 
 | Container | Partition key | Note |
 |---|---|---|
+| `workspaces` | `/id` | New in the workspace version; an older database needs only this one |
 | `modules` | `/id` | |
 | `forms` | `/id` | |
 | `formVersions` | `/formId` | |

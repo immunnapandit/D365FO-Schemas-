@@ -20,6 +20,13 @@ sees the real reason (for F&O, the infolog text).
 
 ## Features
 
+**Workspaces**
+- Every user works in their own workspaces (for example one for Bata, one for Vista): modules, forms, imported files
+  and run history are kept per workspace, and nobody else sees them
+- Switch workspaces in the menu; create, rename and delete them on the Workspaces page. Links include the workspace
+- Users import, build and run forms in their own workspaces. Admins can also open other people's workspaces to help
+- Data from before workspaces is moved into the first admin's "My workspace" automatically
+
 **For users**
 - Forms listed in the left navigation, grouped by module (like F&O), with search and deep links (`/#/form/<id>`)
 - Forms rendered from JSON Schema with inline validation
@@ -27,20 +34,20 @@ sees the real reason (for F&O, the infolog text).
   including the F&O infolog, plus a support reference ID
 - History of your own submissions, with the request that was sent and the response
 
-**For admins**
+**For the owner of a workspace (and admins)**
 - Form designer with tabs for details, sign-in, API request and fields, a live preview, and a JSON tab for advanced schemas
 - Version history of every schema: see who changed what, load an old version, restore it
 - Protection against concurrent edits: if two admins save at the same time, the second save is rejected (409) instead of overwriting the first
-- **Test connection** button, a submission history for all users, and per-form access with `allowedRoles`
+- **Test connection** button and a submission history for everyone who ran a form in the workspace
 
 **Platform / security**
-- Sign-in with Microsoft Entra ID (MSAL + JWT validation) or App Service Easy Auth; `SchemaForms.Admin` / `SchemaForms.User` app roles
+- Sign-in with Microsoft Entra ID (MSAL + JWT validation) or App Service Easy Auth; `SchemaForms.User` app role to use the app, `SchemaForms.Admin` to also open other people's workspaces
 - Secrets are never sent to the browser. They come from **Azure Key Vault** (`{{kv:name}}`) or **AES-256-GCM encrypted** in the DB, with key rotation
 - Outbound calls only to `ALLOWED_HOSTS` (SSRF protection), with timeouts, a response size limit, safe retries and token refresh on 401
 - Strict security headers (no `unsafe-eval` / inline scripts), rate limiting, request IDs, structured logs with secrets redacted
 - Application Insights, health probes, graceful shutdown, history retention
 - Azure Cosmos DB for NoSQL, Azure SQL (both with managed identity) or PostgreSQL; SQLite only for local development
-- 35 automated tests, lint, type check, Docker image, Azure DevOps pipeline
+- 70 automated tests (incl. Cosmos DB emulator), lint, type check, Docker image, Azure DevOps pipeline
 
 ## Quick start (local)
 

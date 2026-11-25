@@ -90,60 +90,63 @@ test('expired, wrong-audience, wrong-scope and tampered tokens are rejected', as
   await request(app).get('/api/me').set({ Authorization: `Bearer ${h}.${forged}.${s}` }).expect(401);
 });
 
-test('only admins can create, edit, delete or see configuration', async () => {
-  const user = await as({ roles: ['SchemaForms.User'] });
+test('everyone builds in their own workspace; other people\'s forms and modules are hidden', async () => {
+  const user = await as({ roles: ['SchemaForms.User'], oid: 'ws-user', name: 'Asha' });
   const admin = await as({ roles: ['SchemaForms.Admin'], oid: 'admin-1', name: 'Ravi' });
 
-  await request(app).post('/api/forms').set(user).send(simpleForm('Nope')).expect(403);
+  // a normal user can build and import in their own workspace
+  const own = (await request(app).post('/api/forms').set(user).send(simpleForm('My own form')).expect(201)).body;
+  assert.equal(own.createdBy, 'Asha');
+  const ownMod = (await request(app).post('/api/modules').set(user).send({ name: 'My module', auth: { type: 'none' } }).expect(201)).body;
+  await request(app).put(`/api/forms/${own.id}`).set(user).send({ ...own, description: 'edited' }).expect(200);
+  await request(app).get(`/api/forms/${own.id}/versions`).set(user).expect(200);
+
+  // the admin's form lives in the admin's workspace: invisible to the user (404, not 403)
   const created = (await request(app).post('/api/forms').set(admin).send(simpleForm('Open form')).expect(201)).body;
   assert.equal(created.createdBy, 'Ravi');
-
-  const asUser = (await request(app).get(`/api/forms/${created.id}`).set(user).expect(200)).body;
-  assert.equal(asUser.api.url, undefined, 'users do not see the API URL');
-  assert.deepEqual(Object.keys(asUser.auth), ['type'], 'users do not see auth configuration');
-
-  await request(app).put(`/api/forms/${created.id}`).set(user).send({ ...created }).expect(403);
-  await request(app).get(`/api/forms/${created.id}/versions`).set(user).expect(403);
-  await request(app).post(`/api/forms/${created.id}/test-auth`).set(user).expect(403);
-  await request(app).delete(`/api/forms/${created.id}`).set(user).expect(403);
-
-  // modules (sign-in, variables, imported file) and import are admin-only too
+  assert.ok(!(await request(app).get('/api/forms').set(user)).body.some((f) => f.id === created.id));
+  await request(app).get(`/api/forms/${created.id}`).set(user).expect(404);
+  await request(app).put(`/api/forms/${created.id}`).set(user).send({ ...created }).expect(404);
+  await request(app).get(`/api/forms/${created.id}/versions`).set(user).expect(404);
+  await request(app).post(`/api/forms/${created.id}/test-auth`).set(user).expect(404);
+  await request(app).post(`/api/forms/${created.id}/execute`).set(user).send({ formData: {} }).expect(404);
+  await request(app).delete(`/api/forms/${created.id}`).set(user).expect(404);
   const mod = (await request(app).post('/api/modules').set(admin).send({ name: 'Admin module', auth: { type: 'none' } }).expect(201)).body;
-  await request(app).get('/api/modules').set(user).expect(403);
-  await request(app).get(`/api/modules/${mod.id}`).set(user).expect(403);
-  await request(app).get(`/api/modules/${mod.id}/spec`).set(user).expect(403);
-  await request(app).post(`/api/modules/${mod.id}/test-auth`).set(user).expect(403);
-  await request(app).put(`/api/modules/${mod.id}`).set(user).send(mod).expect(403);
-  await request(app).post('/api/modules').set(user).send({ name: 'Nope', auth: { type: 'none' } }).expect(403);
-  await request(app).post('/api/import/openapi').set(user).send({ content: '{}' }).expect(403);
+  assert.ok(!(await request(app).get('/api/modules').set(user)).body.some((m) => m.id === mod.id));
+  await request(app).get(`/api/modules/${mod.id}`).set(user).expect(404);
+  await request(app).get(`/api/modules/${mod.id}/spec`).set(user).expect(404);
+  await request(app).put(`/api/modules/${mod.id}`).set(user).send(mod).expect(404);
+
+  // ... and the user cannot step into the admin's workspace by sending its id
+  const adminWs = (await request(app).get('/api/workspaces').set(admin).expect(200)).body[0];
+  const denied = await request(app).get('/api/forms').set(user).set('X-Workspace-Id', adminWs.id).expect(404);
+  assert.equal(denied.body.code, 'workspace_not_found');
+
+  // admins can open the user's workspace to help
+  const userWs = (await request(app).get('/api/workspaces').set(user).expect(200)).body[0];
+  const seen = (await request(app).get('/api/forms').set(admin).set('X-Workspace-Id', userWs.id).expect(200)).body;
+  assert.ok(seen.some((f) => f.id === own.id));
+  assert.ok((await request(app).get('/api/modules').set(admin).set('X-Workspace-Id', userWs.id).expect(200)).body.some((m) => m.id === ownMod.id));
 });
 
-test('allowedRoles hides a form from users without that role', async () => {
-  const admin = await as({ roles: ['SchemaForms.Admin'] });
-  const sales = await as({ roles: ['SchemaForms.User', 'Sales'], oid: 'u-sales' });
-  const other = await as({ roles: ['SchemaForms.User'], oid: 'u-other' });
-  const f = (await request(app).post('/api/forms').set(admin).send(simpleForm('Sales only', { allowedRoles: ['Sales'] })).expect(201)).body;
-
-  assert.ok((await request(app).get('/api/forms').set(sales)).body.some((x) => x.id === f.id));
-  assert.ok(!(await request(app).get('/api/forms').set(other)).body.some((x) => x.id === f.id));
-  await request(app).get(`/api/forms/${f.id}`).set(other).expect(404);
-  await request(app).post(`/api/forms/${f.id}/execute`).set(other).send({ formData: {} }).expect(404);
-});
-
-test('users only see their own run history; admins can see all', async () => {
+test('run history stays in the workspace: owners see all runs of their forms, nobody else does', async () => {
   const admin = await as({ roles: ['SchemaForms.Admin'], oid: 'admin-1' });
   const u1 = await as({ roles: ['SchemaForms.User'], oid: 'u1', name: 'One' });
   const u2 = await as({ roles: ['SchemaForms.User'], oid: 'u2', name: 'Two' });
-  const f = (await request(app).post('/api/forms').set(admin).send(simpleForm('History form')).expect(201)).body;
+  const f = (await request(app).post('/api/forms').set(u1).send(simpleForm('History form')).expect(201)).body;
+  const ws1 = (await request(app).get('/api/workspaces').set(u1).expect(200)).body[0];
 
   const r1 = (await request(app).post(`/api/forms/${f.id}/execute`).set(u1).send({ formData: {} }).expect(200)).body;
-  await request(app).post(`/api/forms/${f.id}/execute`).set(u2).send({ formData: {} }).expect(200);
+  // an admin helping out runs it inside u1's workspace
+  await request(app).post(`/api/forms/${f.id}/execute`).set(admin).set('X-Workspace-Id', ws1.id).send({ formData: {} }).expect(200);
 
-  const mine = (await request(app).get(`/api/forms/${f.id}/executions?scope=all`).set(u1).expect(200)).body;
-  assert.equal(mine.length, 1, 'scope=all is ignored for normal users');
-  assert.equal(mine[0].userName, 'One');
+  const mine = (await request(app).get(`/api/forms/${f.id}/executions`).set(u1).expect(200)).body;
+  assert.equal(mine.length, 1, 'without scope=all you see your own runs');
+  const all = (await request(app).get(`/api/forms/${f.id}/executions?scope=all`).set(u1).expect(200)).body;
+  assert.equal(all.length, 2, 'the owner sees every run of the workspace');
+
+  // u2 is in another workspace: no access to the run, the form or the workspace history
   await request(app).get(`/api/executions/${r1.executionId}`).set(u2).expect(404);
-
-  const all = (await request(app).get(`/api/forms/${f.id}/executions?scope=all`).set(admin).expect(200)).body;
-  assert.equal(all.length, 2);
+  await request(app).post(`/api/forms/${f.id}/execute`).set(u2).send({ formData: {} }).expect(404);
+  assert.equal((await request(app).get('/api/executions?scope=all').set(u2).expect(200)).body.length, 0);
 });

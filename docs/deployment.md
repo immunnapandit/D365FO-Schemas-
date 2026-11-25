@@ -99,16 +99,20 @@ because they take a database lock.
 Use this when the team stores data in Cosmos DB. The app uses the **Cosmos DB for NoSQL** API (not the MongoDB API).
 Skip step 3 if you use this.
 
-It needs four containers. With an account key (`COSMOS_KEY`) the app creates them itself on start-up. With managed
+It needs five containers. With an account key (`COSMOS_KEY`) the app creates them itself on start-up. With managed
 identity it cannot (creating containers is a control-plane action), so create them once:
 
 ```bash
 az cosmosdb sql database create -a <account> -g <rg> -n schemaforms
+az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n workspaces   -p /id
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n modules      -p /id
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n forms        -p /id
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n formVersions -p /formId
 az cosmosdb sql container create -a <account> -g <rg> -d schemaforms -n executions   -p /formId --ttl -1
 ```
+
+An existing database from an older version needs only the new `workspaces` container (`/id`). Everything already in
+the database is moved into the first workspace of the first admin who signs in.
 
 `--ttl -1` turns on time-to-live without a default; each history item carries its own `ttl`
 (`HISTORY_RETENTION_DAYS`), so Cosmos deletes old history by itself.

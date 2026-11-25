@@ -15,6 +15,8 @@ export class ImportError extends Error {}
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 const KNOWN_FORMATS = new Set(['date', 'date-time', 'time', 'email', 'uri', 'uuid']);
+import { applySampleDefaults, emptySkeleton } from './postman.js';
+
 const DROP_KEYS = new Set(['example', 'examples', 'xml', 'externalDocs', 'discriminator', 'deprecated', 'nullable', 'readOnly', 'writeOnly']);
 
 /* ---------------- parsing ---------------- */
@@ -169,7 +171,9 @@ function pickContent(content) {
   if ((!schema || (!schema.properties && !schema.items && !schema.allOf)) && example && typeof example === 'object') {
     schema = inferSchema(example);
   }
-  return { type, bodyType: type === 'application/x-www-form-urlencoded' ? 'form' : 'json', schema: schema ?? null };
+  // the example that fills the form: on the media type, or on the schema itself (Bruno/Postman exports)
+  const sample = example ?? media.schema?.example ?? Object.values(media.schema?.examples ?? {})[0];
+  return { type, bodyType: type === 'application/x-www-form-urlencoded' ? 'form' : 'json', schema: schema ?? null, example: sample };
 }
 
 const isTokenRequest = (path, method, body) =>
@@ -276,10 +280,18 @@ export function buildImportPlan(doc, { moduleName } = {}) {
       let formSchema;
       if (body?.schema && !['GET', 'DELETE'].includes(M)) {
         const bodySchema = toFormSchema(body.schema);
+        // the example in the file fills the form, so a request can be sent as it was tested
+        const hasExample = body.example && typeof body.example === 'object';
+        if (hasExample) applySampleDefaults(bodySchema, body.example);
+        const empty = hasExample ? emptySkeleton(body.example) : undefined;
         if (body.bodyType === 'form') api.bodyType = 'form';
         const isObject = bodySchema.type === 'object' || bodySchema.properties;
         if (isObject && !Object.keys(properties).length) {
           formSchema = { ...bodySchema, type: 'object' }; // body = form data as-is
+          if (empty) {
+            api.sendEmptyFields = true;
+            api.emptyFields = empty;
+          }
         } else if (isObject) {
           // parameters + body fields on one form: body is built from the body fields only
           const bodyTemplate = {};
@@ -311,6 +323,7 @@ export function buildImportPlan(doc, { moduleName } = {}) {
           name,
           ...(op.description ? { description: String(op.description).slice(0, 2000) } : {}),
           icon: ICON_BY_METHOD[M],
+          ...(String(op.tags?.[0] ?? '').trim() ? { group: String(op.tags[0]).trim().slice(0, 60) } : {}),
           auth: { type: 'module' },
           api,
           source: { format: 'openapi', ...(op.operationId ? { operationId: String(op.operationId) } : {}), method: M, path },

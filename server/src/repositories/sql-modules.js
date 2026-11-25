@@ -17,6 +17,7 @@ function rowToModule(r) {
     id: r.id,
     name: r.name,
     description: r.description ?? undefined,
+    workspaceId: r.workspace_id ?? undefined,
     auth: d.auth ?? { type: 'none' },
     variables: d.variables ?? {},
     headers: d.headers ?? {},
@@ -35,11 +36,13 @@ const toColumns = (m) => ({
   definition: JSON.stringify({ auth: m.auth, variables: m.variables ?? {}, headers: m.headers ?? {} }),
 });
 
-const COLUMNS = ['id', 'name', 'description', 'definition', 'version', 'spec_file_name', 'spec_updated_at', 'spec_updated_by', 'created_at', 'created_by', 'updated_at', 'updated_by'];
+const COLUMNS = ['id', 'name', 'description', 'workspace_id', 'definition', 'version', 'spec_file_name', 'spec_updated_at', 'spec_updated_by', 'created_at', 'created_by', 'updated_at', 'updated_by'];
 
-export async function listModules() {
-  const rows = await getDb()('modules').select(COLUMNS).where({ is_deleted: false }).orderBy('name');
-  return rows.map(rowToModule);
+/** Modules of one workspace (all modules when workspaceId is undefined, for maintenance scripts). */
+export async function listModules(workspaceId) {
+  const q = getDb()('modules').select(COLUMNS).where({ is_deleted: false }).orderBy('name');
+  if (workspaceId !== undefined) q.where({ workspace_id: workspaceId });
+  return (await q).map(rowToModule);
 }
 
 export async function getModule(id) {
@@ -47,13 +50,14 @@ export async function getModule(id) {
   return row ? rowToModule(row) : null;
 }
 
-export async function getModuleByName(name) {
+/** Module names are unique inside a workspace (forms are linked to their module by name). */
+export async function getModuleByName(name, workspaceId) {
   if (!name) return null;
-  return (await listModules()).find((m) => sameName(m.name, name)) ?? null;
+  return (await listModules(workspaceId ?? null)).find((m) => sameName(m.name, name)) ?? null;
 }
 
-export async function createModule(mod, user) {
-  if (await getModuleByName(mod.name)) throw nameTaken(mod.name);
+export async function createModule(mod, user, workspaceId = null) {
+  if (await getModuleByName(mod.name, workspaceId)) throw nameTaken(mod.name);
   const db = getDb();
   const base = slug(mod.name);
   let id = base;
@@ -62,6 +66,7 @@ export async function createModule(mod, user) {
   await db('modules').insert({
     id,
     ...toColumns(encryptDefinition(mod)),
+    workspace_id: workspaceId,
     version: 1,
     is_deleted: false,
     created_at: ts,
@@ -80,7 +85,8 @@ export async function updateModule(id, mod, expectedVersion, user) {
     const current = rowToModule(row);
     if (expectedVersion !== undefined && Number(expectedVersion) !== current.version) throw staleConflict(current);
     if (!sameName(mod.name, current.name)) {
-      const other = (await trx('modules').select(COLUMNS).where({ is_deleted: false })).map(rowToModule).find((m) => sameName(m.name, mod.name));
+      const others = await trx('modules').select(COLUMNS).where({ is_deleted: false, workspace_id: row.workspace_id ?? null });
+      const other = others.map(rowToModule).find((m) => sameName(m.name, mod.name));
       if (other) throw nameTaken(mod.name);
     }
     const merged = {

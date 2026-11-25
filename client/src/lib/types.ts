@@ -6,6 +6,20 @@ export interface CurrentUser {
   username: string
   roles: string[]
   isAdmin: boolean
+  /** can build forms, import and change modules in the current workspace (its owner, or an admin) */
+  canEdit?: boolean
+}
+
+/** A user's own space for modules, forms and run history (e.g. one per client project). */
+export interface Workspace {
+  id: string
+  name: string
+  ownerId: string
+  ownerName?: string
+  isMine: boolean
+  canEdit: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface FormSummary {
@@ -14,6 +28,8 @@ export interface FormSummary {
   description?: string
   icon?: string
   category?: string
+  /** group inside the module in the menu (Postman folder, OpenAPI tag) */
+  group?: string
   allowedRoles?: string[]
   version?: number
   updatedAt?: string
@@ -98,6 +114,8 @@ export interface FormDefinition {
   description?: string
   icon?: string
   category?: string
+  /** group inside the module in the menu (Postman folder, OpenAPI tag) */
+  group?: string
   allowedRoles?: string[]
   auth: AuthConfig
   api: ApiConfig

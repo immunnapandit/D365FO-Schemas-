@@ -105,3 +105,15 @@ test('key rotation: data encrypted with the old key can still be read and re-enc
   assert.equal(only.decrypt(re.auth.clientSecret), 'top-secret');
   assert.throws(() => only.decrypt(cipherOld));
 });
+
+test('{{$guid}} and other Postman dynamic values get a fresh value on each submit', async () => {
+  const { resolveDynamicValues } = await import('../src/services/executor.js');
+  const a = resolveDynamicValues({ request_id: '{{$guid}}', at: '{{$isoTimestamp}}', rows: [{ n: 'x-{{$timestamp}}' }], keep: '{{form.x}}', n: 5 });
+  const b = resolveDynamicValues({ request_id: '{{$guid}}' });
+  assert.match(a.request_id, /^[0-9a-f-]{36}$/);
+  assert.notEqual(a.request_id, b.request_id);
+  assert.match(a.at, /^\d{4}-\d\d-\d\dT/);
+  assert.match(a.rows[0].n, /^x-\d{10}$/);
+  assert.equal(a.keep, '{{form.x}}');
+  assert.equal(a.n, 5);
+});

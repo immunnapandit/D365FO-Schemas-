@@ -92,7 +92,7 @@ const isVariable = (v) => {
 };
 
 /** A sample value without nulls, {{variables}} and @odata keys, so it can prefill a list of rows. */
-function sampleRows(v) {
+export function sampleRows(v) {
   if (Array.isArray(v)) return v.map(sampleRows).filter((x) => x !== undefined);
   if (v && typeof v === 'object') {
     const out = {};
@@ -110,7 +110,7 @@ function sampleRows(v) {
  * Keys whose sample value is "" or null, with that value, keeping the nesting (a list keeps its first row).
  * Lets a form send blank fields the way the sample (and Postman) does. Undefined when there are none.
  */
-function emptySkeleton(v) {
+export function emptySkeleton(v) {
   if (Array.isArray(v)) {
     const s = v.length ? emptySkeleton(v[0]) : undefined;
     return s === undefined ? undefined : [s];
@@ -137,17 +137,29 @@ function emptySkeleton(v) {
  */
 function schemaWithDefaults(value) {
   const schema = inferSchema(value);
-  const addDefaults = (s, v) => {
-    if (s.type === 'object' && v && typeof v === 'object' && !Array.isArray(v)) {
-      for (const [k, sub] of Object.entries(s.properties ?? {})) addDefaults(sub, v[k]);
-    } else if (s.type === 'array') {
-      if (Array.isArray(v) && v.length) s.default = sampleRows(v);
-    } else if (s.type !== 'object' && v !== null && v !== undefined && !isVariable(v)) {
-      s.default = v;
-    }
-  };
-  addDefaults(schema, value);
+  applySampleDefaults(schema, value);
   return schema;
+}
+
+/** Field names whose sample value must not become a visible default (passwords and keys in test files). */
+const SECRET_FIELD = /pass(word|wd)?$|secret|token|api_?key|subscription_?key|^authorization$/i;
+
+/** Puts the values of a sample (Postman body, OpenAPI example) into a schema as default values, in place. */
+export function applySampleDefaults(s, v) {
+  if (!s || typeof s !== 'object') return s;
+  if ((s.type === 'object' || s.properties) && v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const [k, sub] of Object.entries(s.properties ?? {})) {
+      if (!SECRET_FIELD.test(k)) applySampleDefaults(sub, v[k]);
+    }
+  } else if (s.type === 'array') {
+    if (Array.isArray(v) && v.length) s.default = sampleRows(v);
+  } else if (s.type !== 'object' && v !== null && v !== undefined && typeof v !== 'object' && !isVariable(v)) {
+    s.default = v;
+    if (typeof v === 'string' && /^\s*\{\{\s*\$(guid|randomUUID|timestamp|isoTimestamp|randomInt)\s*\}\}\s*$/.test(v) && !s.description) {
+      s.description = 'A new value is made on each submit.';
+    }
+  }
+  return s;
 }
 
 const isTokenRequest = (method, url, body) =>
@@ -171,11 +183,11 @@ function description(d) {
 
 const ICON_BY_METHOD = { GET: 'globe', POST: 'document', PUT: 'document', PATCH: 'document', DELETE: 'document' };
 
-/** Flattens folders; requests inside folders keep their own name. */
-function flatten(items, out = []) {
+/** Flattens folders; requests keep their own name and remember their top-level folder (the group in the menu). */
+function flatten(items, out = [], folder = undefined) {
   for (const it of items ?? []) {
-    if (Array.isArray(it?.item)) flatten(it.item, out);
-    else if (it?.request) out.push(it);
+    if (Array.isArray(it?.item)) flatten(it.item, out, folder ?? (String(it.name ?? '').trim() || undefined));
+    else if (it?.request) out.push({ item: it, folder });
   }
   return out;
 }
@@ -194,7 +206,7 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
   const requests = [];
   const usedNames = new Set();
 
-  for (const it of flatten(doc.item)) {
+  for (const { item: it, folder } of flatten(doc.item)) {
     const req = typeof it.request === 'string' ? { method: 'GET', url: it.request } : it.request;
     const M = String(req.method || 'GET').toUpperCase();
     const fullUrl = rawUrl(req.url).trim();
@@ -304,6 +316,7 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
         name,
         ...(description(req.description ?? it.description) ? { description: description(req.description ?? it.description) } : {}),
         icon: ICON_BY_METHOD[M] ?? 'document',
+        ...(folder ? { group: folder.slice(0, 60) } : {}),
         auth: { type: 'module' },
         api,
         source: { format: 'postman', method: M, path: base },

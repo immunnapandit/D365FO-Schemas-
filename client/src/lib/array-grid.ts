@@ -31,10 +31,10 @@ const KEY_GROUPS: RegExp[][] = [
   [/^(line_?(no|num(ber)?)|lineno|linenum|s_?no|seq(uence)?(_?no)?)$/i],
   [/^(doc|document|order|invoice|inv|po|so|bill|voucher|journal|purchase|sales)_?(no|num(ber)?|id)$/i, /^(irn|id|code|number)$/i],
   [/hsn|sac/i],
-  [/^(item|product|article|material|sku)_?(id|no|num(ber)?|code)?$/i],
-  [/(desc|description)$/i, /^(supp?|supplier|vendor|cust|customer|party|buyer|seller)_?name$/i, /^(?!.*file).*name$/i],
+  [/^(item|product|article|art|material|sku)_?(id|no|nbr|num(ber)?|code)$/i, /^(item|product|article|material|sku)$/i],
+  [/^(item|article|art|product)_?name$/i, /(desc|description)$/i, /^(supp?|supplier|vendor|cust|customer|party|buyer|seller)_?name$/i, /^(?!.*file).*name$/i],
   [/(qty|quantity)$/i],
-  [/(unit_?price|price)$/i],
+  [/(unit_?price|price)$/i, /price_?(mrp|rtl|retail|sale|sales)$/i],
   [/taxable_?val(ue)?$|net_?amount$|line_?amount$|line_?item_?amt$|total(_?amount)?$/i, /(amount|amt)$/i],
   [/^(doc|document|order|invoice|inv|posting|transaction|trans)_?date$/i],
 ]
@@ -57,11 +57,12 @@ function ordered(keys: string[], itemUi?: UiSchema): string[] {
 }
 
 /** The columns to show for a long line: required fields first, then the usual line identifiers. */
-function keyColumns(keys: string[], required: Set<string>, preferred?: unknown): string[] {
+function keyColumns(keys: string[], required: Set<string>, numeric: Set<string>, preferred?: unknown): string[] {
   if (Array.isArray(preferred) && preferred.length) return preferred.filter((k): k is string => typeof k === 'string' && keys.includes(k))
   const picked = new Set<string>()
   const take = (k?: string) => { if (k && picked.size < KEY_COLUMNS) picked.add(k) }
-  take(keys[0]) // the first field of a line is nearly always what identifies it
+  // the first field usually identifies a line, unless it is one of a run of numbers (size_010, size_020, ...)
+  if (keys[0] && !numeric.has(keys[0])) take(keys[0])
   keys.filter((k) => required.has(k)).forEach(take)
   const isLine = keys.some((k) => KEY_GROUPS[LINE_NO].some((re) => re.test(k)))
   for (const [g, group] of KEY_GROUPS.entries()) {
@@ -71,6 +72,7 @@ function keyColumns(keys: string[], required: Set<string>, preferred?: unknown):
       if (hit) { take(hit); break }
     }
   }
+  keys.filter((k) => !numeric.has(k)).forEach(take) // text fields (codes, names) say more than numbers
   keys.forEach(take)
   return keys.filter((k) => picked.has(k)) // keep the file's order, it is the order people know
 }
@@ -95,7 +97,8 @@ export function listLayout(itemSchema: unknown, itemUi?: UiSchema, listUi?: UiSc
     return { mode: 'inline', columns: keys.map((k) => column(s, k, required)) }
   }
   const preferred = (listUi?.['ui:options'] as Record<string, unknown> | undefined)?.gridColumns
-  return { mode: 'lines', columns: keyColumns(keys, required, preferred).map((k) => column(s, k, required)), fieldCount: all.length }
+  const numeric = new Set(keys.filter((k) => column(s, k, required).numeric))
+  return { mode: 'lines', columns: keyColumns(keys, required, numeric, preferred).map((k) => column(s, k, required)), fieldCount: all.length }
 }
 
 /** A cell value as shown in the lines grid. */

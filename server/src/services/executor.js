@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { resolveDeep, resolveString } from './template.js';
@@ -165,6 +166,26 @@ export async function testAuth(form, mod) {
   }
 }
 
+/**
+ * Postman/Bruno dynamic variables in form values ({{$guid}}, {{$timestamp}}, ...) get a fresh value on every
+ * submit, as in Postman. Only these few names are replaced: other {{...}} text typed by a user is sent as it is.
+ */
+const DYNAMIC = {
+  guid: () => randomUUID(),
+  randomUUID: () => randomUUID(),
+  timestamp: () => String(Math.floor(Date.now() / 1000)),
+  isoTimestamp: () => new Date().toISOString(),
+  randomInt: () => String(Math.floor(Math.random() * 1001)),
+};
+const DYNAMIC_RE = /\{\{\s*\$(guid|randomUUID|timestamp|isoTimestamp|randomInt)\s*\}\}/g;
+
+export function resolveDynamicValues(v) {
+  if (typeof v === 'string') return v.includes('{{') ? v.replace(DYNAMIC_RE, (_, name) => DYNAMIC[name]()) : v;
+  if (Array.isArray(v)) return v.map(resolveDynamicValues);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolveDynamicValues(x)]));
+  return v;
+}
+
 /** form and mod (its module, may be null) = stored definitions with secrets already decrypted */
 export async function execute(form, rawFormData, mod = null) {
   const started = Date.now();
@@ -176,6 +197,7 @@ export async function execute(form, rawFormData, mod = null) {
     if (!form.api?.url) throw new StageError('config', 'Schema has no api.url');
     let fd = clean(validateForm(form, rawFormData)) ?? {};
     if (form.api.sendEmptyFields && form.api.emptyFields) fd = fillEmpty(fd, form.api.emptyFields);
+    fd = resolveDynamicValues(fd);
 
     const { auth: authConfig, vars: rawVars } = effective(form, mod);
     const kv = await resolveKvRefs(authConfig, form.api, rawVars, mod?.headers);

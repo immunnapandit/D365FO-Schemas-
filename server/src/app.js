@@ -15,6 +15,7 @@ import { HttpError } from './http-errors.js';
 import { pingDb } from './db/index.js';
 import formsRouter, { executionsRouter } from './routes/forms.js';
 import modulesRouter, { importRouter } from './routes/modules.js';
+import workspacesRouter from './routes/workspaces.js';
 import { definitionSchema } from './services/definition-schema.js';
 import { trackException } from './telemetry.js';
 
@@ -124,6 +125,7 @@ export function createApp({ clientDist = DEFAULT_CLIENT_DIST } = {}) {
     res.json({ id, name, username, roles, isAdmin });
   });
   app.get('/api/meta/definition-schema', (_req, res) => res.json(definitionSchema));
+  app.use('/api/workspaces', workspacesRouter);
   app.use('/api/forms', formsRouter);
   app.use('/api/modules', modulesRouter);
   app.use('/api/import', importRouter);

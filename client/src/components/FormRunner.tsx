@@ -115,7 +115,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
           <h1>{def.name}</h1>
           {def.description && <p className="lede">{def.description}</p>}
         </div>
-        {user.isAdmin && (
+        {user.canEdit && (
           <div className="actions">
             {authType !== 'none' && (
               <button className="btn" onClick={testConnection} disabled={testing}>
@@ -128,7 +128,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
         )}
       </header>
 
-      {user.isAdmin && (
+      {user.canEdit && (
         <dl className="facts">
           <div><dt>Request</dt><dd className="mono" title={def.api.url}>{(def.api.method || 'POST').toUpperCase()} {def.api.url}</dd></div>
           {authType === 'module' && <div><dt>Sign-in</dt><dd>From the module {def.category ? `“${def.category}”` : '(none chosen)'}</dd></div>}

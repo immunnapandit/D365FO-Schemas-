@@ -34,6 +34,8 @@ function docToForm(doc) {
     description: doc.description ?? undefined,
     icon: doc.icon ?? undefined,
     category: doc.category ?? undefined,
+    group: doc.group ?? undefined,
+    workspaceId: doc.workspaceId ?? undefined,
     ...parse(doc.definition, {}),
     allowedRoles: doc.allowedRoles?.length ? doc.allowedRoles : undefined,
     version: Number(doc.version),
@@ -51,6 +53,7 @@ function toFields(def) {
     description: def.description ?? null,
     icon: def.icon ?? null,
     category: def.category?.trim() || null,
+    group: def.group?.trim() || null,
     definition: JSON.stringify(definition),
     allowedRoles: def.allowedRoles?.length ? def.allowedRoles : null,
   };
@@ -91,12 +94,16 @@ async function addVersion(form, changeType, user) {
   }
 }
 
-export async function listForms() {
+/** Forms of one workspace (all forms when workspaceId is undefined, for maintenance scripts). */
+export async function listForms(workspaceId) {
+  const inWorkspace =
+    workspaceId === undefined ? '' : workspaceId === null ? ' AND (NOT IS_DEFINED(c.workspaceId) OR IS_NULL(c.workspaceId))' : ' AND c.workspaceId = @ws';
   const { resources } = await forms()
     .items.query({
       query:
-        'SELECT c.id, c.name, c.description, c.icon, c.category, c.allowedRoles, c.version, c.updatedAt, c.updatedBy ' +
-        'FROM c WHERE c.isDeleted = false ORDER BY c.name',
+        'SELECT c.id, c.name, c.description, c.icon, c.category, c.allowedRoles, c.version, c.updatedAt, c.updatedBy, c.workspaceId, c["group"] ' +
+        `FROM c WHERE c.isDeleted = false${inWorkspace} ORDER BY c.name`,
+      parameters: workspaceId ? [{ name: '@ws', value: workspaceId }] : [],
     })
     .fetchAll();
   return resources.map((r) => ({
@@ -105,6 +112,8 @@ export async function listForms() {
     description: r.description ?? undefined,
     icon: r.icon ?? undefined,
     category: r.category ?? undefined,
+    group: r.group ?? undefined,
+    workspaceId: r.workspaceId ?? undefined,
     allowedRoles: r.allowedRoles?.length ? r.allowedRoles : undefined,
     version: Number(r.version),
     updatedAt: r.updatedAt,
@@ -122,7 +131,7 @@ export async function countForms() {
   return Number(resources[0] ?? 0);
 }
 
-export async function createForm(def, user) {
+export async function createForm(def, user, workspaceId = null) {
   const ts = now();
   const base = slug(def.name);
   const secured = encryptDefinition(def);
@@ -132,6 +141,7 @@ export async function createForm(def, user) {
       const { resource } = await forms().items.create({
         id,
         ...toFields(secured),
+        workspaceId,
         version: 1,
         isDeleted: false,
         createdAt: ts,

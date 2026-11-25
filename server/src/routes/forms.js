@@ -2,7 +2,8 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { config } from '../config.js';
 import { badRequest, notFound, HttpError } from '../http-errors.js';
-import { canAccessForm, requireAdmin } from '../middleware/auth.js';
+import { canAccessForm } from '../middleware/auth.js';
+import { requireEditor, useWorkspace } from './workspaces.js';
 import * as forms from '../repositories/forms.js';
 import * as executions from '../repositories/executions.js';
 import * as modules from '../repositories/modules.js';
@@ -14,6 +15,7 @@ import { clearTokenCache } from '../services/outbound-auth.js';
 import { trackEvent } from '../telemetry.js';
 
 const router = Router();
+router.use(useWorkspace); // every form belongs to the workspace chosen in the X-Workspace-Id header
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 const executeLimiter = rateLimit({
@@ -25,9 +27,9 @@ const executeLimiter = rateLimit({
   message: { message: 'Too many submissions. Please wait a minute and try again.', code: 'rate_limited' },
 });
 
-/** Normal users only get what they need to fill the form, never the auth/API configuration. */
-function forUser(form, user) {
-  if (user.isAdmin) return maskDefinition(form);
+/** People who can only run the form get what they need to fill it, never the auth/API configuration. */
+function forUser(form, req) {
+  if (req.canEdit) return maskDefinition(form);
   return {
     id: form.id,
     name: form.name,
@@ -43,11 +45,24 @@ function forUser(form, user) {
   };
 }
 
+/** The form, if it is in the current workspace and the user may use it (otherwise 404: do not reveal it exists). */
 async function loadAccessible(req) {
   const form = await forms.getForm(req.params.id);
-  if (!form) throw notFound('Form not found');
-  if (!canAccessForm(req.user, form)) throw notFound('Form not found'); // do not reveal it exists
+  if (!form || form.workspaceId !== req.workspace.id) throw notFound('Form not found');
+  if (!req.canEdit && !canAccessForm(req.user, form)) throw notFound('Form not found');
   return form;
+}
+
+/** For version history: also works for a deleted form, through the workspace of its last version. */
+async function assertFormInWorkspace(req) {
+  const form = await forms.getForm(req.params.id);
+  if (form) {
+    if (form.workspaceId !== req.workspace.id) throw notFound('Form not found');
+    return;
+  }
+  const [latest] = await forms.listVersions(req.params.id);
+  const snap = latest ? (await forms.getVersion(req.params.id, latest.id))?.snapshot : null;
+  if (!snap || snap.workspaceId !== req.workspace.id) throw notFound('Form not found');
 }
 
 function decryptOrFail(form) {
@@ -62,7 +77,7 @@ function decryptOrFail(form) {
 function definitionFromBody(body) {
   if (!body || typeof body !== 'object') throw badRequest('Request body must be a JSON object');
   // eslint-disable-next-line no-unused-vars
-  const { id, createdAt, createdBy, updatedAt, updatedBy, ...def } = body;
+  const { id, createdAt, createdBy, updatedAt, updatedBy, workspaceId, ...def } = body;
   const problems = validateDefinition(def);
   if (problems.length) throw badRequest('The schema definition is not valid', problems);
   // eslint-disable-next-line no-unused-vars
@@ -75,29 +90,29 @@ function definitionFromBody(body) {
 router.get(
   '/',
   wrap(async (req, res) => {
-    const all = await forms.listForms();
-    res.json(all.filter((f) => canAccessForm(req.user, f)));
+    const all = await forms.listForms(req.workspace.id);
+    res.json(req.canEdit ? all : all.filter((f) => canAccessForm(req.user, f)));
   }),
 );
 
 router.get(
   '/:id',
   wrap(async (req, res) => {
-    res.json(forUser(await loadAccessible(req), req.user));
+    res.json(forUser(await loadAccessible(req), req));
   }),
 );
 
-/* ---------------- admin: create / update / delete ---------------- */
+/* ---------------- create / update / delete (owner of the workspace, or an admin) ---------------- */
 
 router.post(
   '/',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
     const { def } = definitionFromBody(req.body);
     if (containsMask(def.auth) || containsMask(def.api)) {
       throw badRequest('A new form cannot contain masked secrets (••••••••). Enter the real value or a {{kv:...}} reference.');
     }
-    const form = await forms.createForm(def, req.user);
+    const form = await forms.createForm(def, req.user, req.workspace.id);
     req.log.info({ formId: form.id }, 'form created');
     res.status(201).json(maskDefinition(form));
   }),
@@ -105,8 +120,9 @@ router.post(
 
 router.put(
   '/:id',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
+    await loadAccessible(req);
     const { def, version } = definitionFromBody(req.body);
     if (version === undefined) throw badRequest('"version" is required so concurrent edits can be detected.');
     const form = await forms.updateForm(req.params.id, def, version, req.user);
@@ -118,28 +134,31 @@ router.put(
 
 router.delete(
   '/:id',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
+    await loadAccessible(req);
     await forms.deleteForm(req.params.id, req.user);
     req.log.info({ formId: req.params.id }, 'form deleted');
     res.status(204).end();
   }),
 );
 
-/* ---------------- admin: versions ---------------- */
+/* ---------------- versions ---------------- */
 
 router.get(
   '/:id/versions',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
+    await assertFormInWorkspace(req);
     res.json(await forms.listVersions(req.params.id));
   }),
 );
 
 router.get(
   '/:id/versions/:versionId',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
+    await assertFormInWorkspace(req);
     const v = await forms.getVersion(req.params.id, req.params.versionId);
     if (!v) throw notFound('Version not found');
     res.json({ version: v.version, snapshot: maskDefinition(v.snapshot) });
@@ -148,8 +167,9 @@ router.get(
 
 router.post(
   '/:id/versions/:versionId/restore',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
+    await loadAccessible(req);
     const v = await forms.getVersion(req.params.id, req.params.versionId);
     if (!v) throw notFound('Version not found');
     const s = v.snapshot;
@@ -184,7 +204,7 @@ router.post(
     if (formData !== undefined && (typeof formData !== 'object' || Array.isArray(formData) || formData === null)) {
       throw badRequest('"formData" must be an object');
     }
-    const mod = decryptModule(await modules.getModuleByName(form.category));
+    const mod = decryptModule(await modules.getModuleByName(form.category, req.workspace.id));
     const result = await execute(form, formData ?? {}, mod);
 
     let executionId;
@@ -203,19 +223,19 @@ router.post(
       { durationMs: result.durationMs ?? 0 },
     );
 
-    // normal users do not need the raw response of failed token calls (could reveal configuration)
+    // people who only run forms do not need the raw response of failed token calls (could reveal configuration)
     const out = { ...result, executionId, requestId: req.id };
-    if (!req.user.isAdmin && result.stage === 'auth') delete out.response;
+    if (!req.canEdit && result.stage === 'auth') delete out.response;
     res.json(out);
   }),
 );
 
 router.post(
   '/:id/test-auth',
-  requireAdmin,
+  requireEditor,
   wrap(async (req, res) => {
     const stored = await loadAccessible(req);
-    const mod = decryptModule(await modules.getModuleByName(stored.category));
+    const mod = decryptModule(await modules.getModuleByName(stored.category, req.workspace.id));
     res.json({ ...(await testAuth(decryptOrFail(stored), mod)), requestId: req.id });
   }),
 );
@@ -224,9 +244,10 @@ router.get(
   '/:id/executions',
   wrap(async (req, res) => {
     await loadAccessible(req);
-    const all = req.user.isAdmin && req.query.scope === 'all';
+    const all = req.canEdit && req.query.scope === 'all';
     res.json(
       await executions.listExecutions({
+        workspaceId: req.workspace.id,
         formId: req.params.id,
         userId: all ? undefined : req.user.id,
         limit: req.query.limit,
@@ -239,13 +260,15 @@ router.get(
 export default router;
 
 export const executionsRouter = Router();
+executionsRouter.use(useWorkspace);
 
 executionsRouter.get(
   '/',
   wrap(async (req, res) => {
-    const all = req.user.isAdmin && req.query.scope === 'all';
+    const all = req.canEdit && req.query.scope === 'all';
     res.json(
       await executions.listExecutions({
+        workspaceId: req.workspace.id,
         userId: all ? undefined : req.user.id,
         limit: req.query.limit,
         before: typeof req.query.before === 'string' ? req.query.before : undefined,
@@ -258,7 +281,7 @@ executionsRouter.get(
   '/:id',
   wrap(async (req, res) => {
     const ex = await executions.getExecution(req.params.id);
-    if (!ex || (!req.user.isAdmin && ex.userId !== req.user.id)) throw notFound('Run not found');
+    if (!ex || ex.workspaceId !== req.workspace.id || (!req.canEdit && ex.userId !== req.user.id)) throw notFound('Run not found');
     res.json(ex);
   }),
 );

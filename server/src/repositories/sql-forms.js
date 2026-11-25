@@ -21,6 +21,8 @@ function rowToForm(row) {
     description: row.description ?? undefined,
     icon: row.icon ?? undefined,
     category: row.category ?? undefined,
+    group: row.form_group ?? undefined,
+    workspaceId: row.workspace_id ?? undefined,
     ...parse(row.definition, {}),
     allowedRoles: parse(row.allowed_roles, undefined) ?? undefined,
     version: Number(row.version),
@@ -38,6 +40,7 @@ function toColumns(def) {
     description: def.description ?? null,
     icon: def.icon ?? null,
     category: def.category?.trim() || null,
+    form_group: def.group?.trim() || null,
     definition: JSON.stringify(definition),
     allowed_roles: def.allowedRoles?.length ? JSON.stringify(def.allowedRoles) : null,
   };
@@ -66,17 +69,22 @@ async function addVersion(trx, form, changeType, user) {
   });
 }
 
-export async function listForms() {
-  const rows = await getDb()('forms')
-    .select('id', 'name', 'description', 'icon', 'category', 'allowed_roles', 'version', 'updated_at', 'updated_by')
+/** Forms of one workspace (all forms when workspaceId is undefined, for maintenance scripts). */
+export async function listForms(workspaceId) {
+  const q = getDb()('forms')
+    .select('id', 'name', 'description', 'icon', 'category', 'allowed_roles', 'version', 'updated_at', 'updated_by', 'workspace_id', 'form_group')
     .where({ is_deleted: false })
     .orderBy('name');
+  if (workspaceId !== undefined) q.where({ workspace_id: workspaceId });
+  const rows = await q;
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     description: r.description ?? undefined,
     icon: r.icon ?? undefined,
     category: r.category ?? undefined,
+    group: r.form_group ?? undefined,
+    workspaceId: r.workspace_id ?? undefined,
     allowedRoles: parse(r.allowed_roles, undefined) ?? undefined,
     version: Number(r.version),
     updatedAt: r.updated_at,
@@ -95,7 +103,7 @@ export async function countForms() {
   return Number(r.n);
 }
 
-export async function createForm(def, user) {
+export async function createForm(def, user, workspaceId = null) {
   return getDb().transaction(async (trx) => {
     let id = slug(def.name);
     if (await trx('forms').where({ id }).first()) id = `${id.slice(0, 43)}-${randomBytes(2).toString('hex')}`;
@@ -104,6 +112,7 @@ export async function createForm(def, user) {
     await trx('forms').insert({
       id,
       ...toColumns(secured),
+      workspace_id: workspaceId,
       version: 1,
       is_deleted: false,
       created_at: ts,
