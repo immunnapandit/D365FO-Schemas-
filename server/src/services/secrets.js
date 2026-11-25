@@ -11,7 +11,8 @@ import { config } from '../config.js';
 
 export const MASK = '••••••••';
 const PREFIX = 'enc:v1:';
-const SECRET_KEY = /secret|password|passwd|^token$|^value$|api[-_]?key|subscription[-_]?key|^authorization$/i;
+// names ending in token (apiToken, accessToken, bearerToken) are secrets; tokenUrl / tokenPath are not
+const SECRET_KEY = /secret|password|passwd|pwd$|token$|^value$|api[-_]?key|subscription[-_]?key|^authorization$/i;
 const ONLY_PLACEHOLDERS = /^(\s*\{\{\s*(env|kv|var):[^}]+\}\}\s*)+$/;
 
 let key = null;

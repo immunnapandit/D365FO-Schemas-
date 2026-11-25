@@ -332,3 +332,61 @@ test('folders of a collection and tags of an OpenAPI file become groups in the m
   assert.equal(p.password.default, undefined, 'passwords from the file are not shown in the form');
   assert.deepEqual(def.api.emptyFields, { lines: [{ note: '' }] });
 });
+
+test('a request sign-in that differs from the collection: own sign-in, secrets in module variables', async () => {
+  const { buildPostmanPlan } = await import('../src/services/postman.js');
+  const col = {
+    info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{mainToken}}' }] },
+    item: [
+      { name: 'Inherit', request: { method: 'GET', url: 'https://x/a' } },
+      { name: 'Open', request: { method: 'GET', url: 'https://x/b', auth: { type: 'noauth' } } },
+      { name: 'Basic', request: { method: 'GET', url: 'https://x/c', auth: { type: 'basic', basic: [{ key: 'username', value: 'svc' }, { key: 'password', value: 'pw1' }] } } },
+      { name: 'Key in query', request: { method: 'GET', url: 'https://x/d', auth: { type: 'apikey', apikey: [{ key: 'key', value: 'code' }, { key: 'value', value: 'k1' }, { key: 'in', value: 'query' }] } } },
+      { name: 'Folder', auth: { type: 'apikey', apikey: [{ key: 'key', value: 'X-Key' }, { key: 'value', value: 'k2' }] }, item: [{ name: 'In folder', request: { method: 'GET', url: 'https://x/e' } }] },
+      { name: 'No URL', request: { method: 'GET' } },
+      { name: 'GraphQL', request: { method: 'POST', url: 'https://x/g', body: { mode: 'graphql', graphql: { query: '{ a }', variables: '{"n":1}' } } } },
+    ],
+  };
+  const plan = buildPostmanPlan(col);
+  const by = Object.fromEntries(plan.requests.map((r) => [r.name, r.definition]));
+  assert.equal(by.Inherit.auth.type, 'module');
+  assert.equal(by.Open.auth.type, 'none');
+  assert.deepEqual(by.Basic.auth, { type: 'basic', username: 'svc', password: '{{basicPassword}}' });
+  assert.equal(plan.variableValues.basicPassword, 'pw1');
+  assert.equal(by['Key in query'].api.query.code, '{{apiKey}}');
+  assert.equal(by['Key in query'].auth.type, 'none');
+  assert.deepEqual(by['In folder'].auth, { type: 'api_key', headerName: 'X-Key', value: '{{apiKey2}}' });
+  assert.ok(!by['No URL']);
+  assert.match(plan.warnings.join(' '), /"No URL" has no URL and was skipped/);
+  assert.deepEqual(Object.keys(by.GraphQL.formSchema.properties), ['query', 'variables']);
+  assert.equal(by.GraphQL.formSchema.properties.query.default, '{ a }');
+});
+
+test('variable names ending in token are kept as secrets', async () => {
+  const { maskDefinition } = await import('../src/services/secrets.js');
+  const m = maskDefinition({ variables: { apiToken: 'abc', tokenUrl: 'https://t' } });
+  assert.equal(m.variables.apiToken, '••••••••');
+  assert.equal(m.variables.tokenUrl, 'https://t');
+});
+
+test('raw XML / text bodies are sent as typed; body values that are only a variable come from the module', async () => {
+  const { buildPostmanPlan } = await import('../src/services/postman.js');
+  const col = {
+    info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    variable: [{ key: 'company', value: 'USMF' }],
+    item: [
+      { name: 'Xml', request: { method: 'POST', url: 'https://x/x', header: [{ key: 'Content-Type', value: 'application/xml; charset=utf-8' }], body: { mode: 'raw', raw: '<a>1</a>', options: { raw: { language: 'xml' } } } } },
+      { name: 'Text', request: { method: 'POST', url: 'https://x/t', body: { mode: 'raw', raw: 'hello', options: { raw: { language: 'text' } } } } },
+      { name: 'Var', request: { method: 'PATCH', url: 'https://x/v', body: { mode: 'raw', raw: '{"qty":5,"company":"{{company}}","id":"{{$guid}}"}' } } },
+    ],
+  };
+  const by = Object.fromEntries(buildPostmanPlan(col).requests.map((r) => [r.name, r.definition]));
+  assert.equal(by.Xml.api.bodyType, 'text');
+  assert.equal(by.Xml.api.headers['Content-Type'], 'application/xml; charset=utf-8');
+  assert.equal(by.Xml.formSchema.properties.body.default, '<a>1</a>');
+  assert.equal(by.Xml.uiSchema.body['ui:widget'], 'textarea');
+  assert.equal(by.Text.api.headers['Content-Type'], 'text/plain');
+  assert.deepEqual(Object.keys(by.Var.formSchema.properties), ['qty', 'id']);
+  assert.deepEqual(by.Var.api.bodyTemplate, { qty: '{{form.qty}}', id: '{{form.id}}', company: '{{company}}' });
+});

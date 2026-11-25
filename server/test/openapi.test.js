@@ -104,8 +104,8 @@ test('OpenAPI schema is turned into a form schema', () => {
 });
 
 test('clear messages for files that are not OpenAPI 3', () => {
-  assert.throws(() => parseSpec('swagger: "2.0"\npaths: {}'), /Swagger 2.0/);
-  assert.throws(() => parseSpec('just: text'), /openapi: 3/);
+  assert.throws(() => parseSpec('swagger: "2.0"\npaths: {}'), /no requests/);
+  assert.throws(() => parseSpec('just: text'), /not a Postman collection .* or an OpenAPI file/);
   assert.throws(() => parseSpec('openapi: 3.0.0\n  bad: [indent'), /not valid YAML/);
 });
 
@@ -316,4 +316,89 @@ paths:
   const modules = await import('../src/repositories/modules.js');
   const back = await modules.getModuleSpec(again.module.id);
   assert.equal(back.content, content, 'the real keys were put back from the stored file');
+});
+
+test('Swagger 2.0: body, form and path parameters, definitions and basic sign-in', () => {
+  const doc = {
+    swagger: '2.0', info: { title: 'Vendors', version: '1' }, host: 'api.example.com', basePath: '/api', schemes: ['https'],
+    securityDefinitions: { basic: { type: 'basic' } }, security: [{ basic: [] }],
+    paths: {
+      '/vendors': { post: { summary: 'Create vendor', parameters: [
+        { in: 'body', name: 'body', required: true, schema: { $ref: '#/definitions/Vendor' } },
+        { in: 'query', name: 'company', type: 'string', default: 'USMF' } ] } },
+      '/vendors/{id}': { get: { summary: 'Get vendor', parameters: [{ in: 'path', name: 'id', required: true, type: 'string' }] } },
+      '/notes': { post: { summary: 'Note', consumes: ['application/x-www-form-urlencoded'], parameters: [{ in: 'formData', name: 'note', type: 'string', required: true }] } },
+    },
+    definitions: { Vendor: { type: 'object', required: ['accountNum'], properties: { accountNum: { type: 'string' }, blocked: { type: 'boolean' } } } },
+  };
+  const plan = buildImportPlan(parseSpec(JSON.stringify(doc)));
+  assert.equal(plan.auth.type, 'basic');
+  const [create, get, note] = plan.requests.map((r) => r.definition);
+  assert.equal(create.api.url, 'https://api.example.com/api/vendors');
+  assert.deepEqual(Object.keys(create.formSchema.properties).sort(), ['accountNum', 'blocked', 'company']);
+  assert.ok(create.formSchema.required.includes('accountNum'));
+  assert.equal(get.api.url, 'https://api.example.com/api/vendors/{{form.id}}');
+  assert.equal(note.api.bodyType, 'form');
+  assert.deepEqual(note.formSchema.required, ['note']);
+});
+
+test('operation security: no sign-in, a gateway key, or the module sign-in', () => {
+  const doc = {
+    openapi: '3.0.0', info: { title: 'S', version: '1' }, servers: [{ url: 'https://x.example' }],
+    security: [{ entra: [] }],
+    components: { securitySchemes: {
+      key: { type: 'apiKey', in: 'header', name: 'X-Api-Key' },
+      entra: { type: 'oauth2', flows: { clientCredentials: { tokenUrl: 'https://login/t', scopes: {} } } },
+    } },
+    paths: {
+      '/a': { get: { summary: 'Module' } },
+      '/b': { get: { summary: 'Open', security: [] } },
+      '/c': { get: { summary: 'Key', security: [{ key: [] }] } },
+    },
+  };
+  const plan = buildImportPlan(parseSpec(JSON.stringify(doc)));
+  assert.equal(plan.auth.type, 'oauth2_client_credentials', 'the scheme of the top-level security, not the first defined');
+  const [a, b, c] = plan.requests.map((r) => r.definition);
+  assert.equal(a.auth.type, 'module');
+  assert.equal(b.auth.type, 'none');
+  assert.equal(c.auth.type, 'none');
+  assert.equal(c.api.headers['X-Api-Key'], '{{var:keyKey}}');
+  assert.ok(plan.variables.includes('keyKey'));
+});
+
+test('no server address, and references the file does not contain, are reported', () => {
+  const doc = {
+    openapi: '3.0.0', info: { title: 'S', version: '1' },
+    paths: { '/a': { post: { summary: 'A', requestBody: { content: { 'application/json': { schema: { $ref: './other.yaml#/X' } } } } } } },
+  };
+  const plan = buildImportPlan(parseSpec(JSON.stringify(doc)));
+  assert.equal(plan.requests[0].url, '{{baseUrl}}/a');
+  assert.ok(plan.variables.includes('baseUrl'));
+  assert.match(plan.warnings.join(' '), /baseUrl/);
+  assert.match(plan.warnings.join(' '), /another file \(\.\/other\.yaml#\/X\)/);
+});
+
+test('XML bodies get one text box; JSON bodies without a schema get a box to paste JSON in', () => {
+  const doc = {
+    openapi: '3.0.0', info: { title: 'S', version: '1' }, servers: [{ url: 'https://x.example' }],
+    paths: {
+      '/xml': { post: { summary: 'Xml', requestBody: { content: { 'application/xml': { schema: { type: 'object' }, example: '<a/>' } } } } },
+      '/loose': { post: { summary: 'Loose', requestBody: { content: { 'application/json': { schema: { type: 'object' } } } } } },
+    },
+  };
+  const [xml, loose] = buildImportPlan(parseSpec(JSON.stringify(doc))).requests.map((r) => r.definition);
+  assert.equal(xml.api.bodyType, 'text');
+  assert.equal(xml.api.headers['Content-Type'], 'application/xml');
+  assert.equal(xml.formSchema.properties.body.default, '<a/>');
+  assert.equal(loose.api.bodyTemplate, '{{form.body | json}}');
+  assert.equal(loose.formSchema.properties.body.title, 'Body (JSON)');
+});
+
+test('paths that carry their own address are kept; // paths get the base address', () => {
+  const doc = {
+    openapi: '3.0.0', info: { title: 'S', version: '1' }, servers: [],
+    paths: { '{{base_url}}/api/a': { get: { summary: 'A' } }, '//api/b': { get: { summary: 'B' } }, '/c': { get: { summary: 'C' } } },
+  };
+  const plan = buildImportPlan(parseSpec(JSON.stringify(doc)));
+  assert.deepEqual(plan.requests.map((r) => r.url), ['{{base_url}}/api/a', '{{baseUrl}}/api/b', '{{baseUrl}}/c']);
 });

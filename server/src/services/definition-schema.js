@@ -102,7 +102,10 @@ export const definitionSchema = {
         url: str('Full URL. Can use {{env:NAME}} and {{form.field}}.', { minLength: 1 }),
         headers: strMap('Extra request headers'),
         query: strMap('Query string parameters, e.g. { "cross-company": "true" }'),
-        bodyType: { enum: ['json', 'form'] },
+        bodyType: {
+          enum: ['json', 'form', 'text'],
+          description: 'json (default), form (x-www-form-urlencoded) or text: the body is sent as it is, e.g. XML; set its Content-Type in headers',
+        },
         bodyTemplate: {
           description:
             'Optional shape of the request body. Use "{{form.field}}" and filters: | datetime, | number, | lower, | upper. If missing, the form data is sent as-is.',

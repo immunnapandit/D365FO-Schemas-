@@ -215,6 +215,7 @@ importRouter.post(
           exists: Boolean(findForm(r.name)),
         })),
         problems,
+        warnings: plan.warnings ?? [],
       });
     }
 
@@ -276,6 +277,6 @@ importRouter.post(
     await modules.setModuleSpec(mod.id, { content, fileName: typeof fileName === 'string' ? fileName.slice(0, 200) : undefined }, req.user);
     clearTokenCache();
     req.log.info({ moduleId: mod.id, created: created.length, updated: updated.length }, 'OpenAPI imported');
-    res.status(201).json({ module: maskDefinition((await modules.getModule(mod.id)) ?? mod), created, updated });
+    res.status(201).json({ module: maskDefinition((await modules.getModule(mod.id)) ?? mod), created, updated, warnings: plan.warnings ?? [] });
   }),
 );

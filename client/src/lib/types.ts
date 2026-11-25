@@ -56,7 +56,7 @@ export interface ApiConfig {
   url?: string
   headers?: Record<string, string>
   query?: Record<string, string>
-  bodyType?: 'json' | 'form'
+  bodyType?: 'json' | 'form' | 'text'
   bodyTemplate?: unknown
   /** Send fields left blank as "" / null, the way the imported sample body does. */
   sendEmptyFields?: boolean
@@ -99,6 +99,8 @@ export interface ImportPreview {
   variablesWithValue?: string[]
   requests: { key: string; name: string; method: string; url: string; fieldCount: number; exists: boolean }[]
   problems: string[]
+  /** things the import could not take over; the import still works */
+  warnings?: string[]
 }
 
 export interface ImportResult {

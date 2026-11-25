@@ -117,3 +117,31 @@ test('{{$guid}} and other Postman dynamic values get a fresh value on each submi
   assert.equal(a.keep, '{{form.x}}');
   assert.equal(a.n, 5);
 });
+
+test('HTML error pages become one readable line', async () => {
+  const { normalizeApiError } = await import('../src/services/errors.js');
+  assert.equal(
+    normalizeApiError(404, '<html><body>Not found</body></html>').message,
+    'HTTP 404 Not Found (the system answered with a web page, not JSON). Check the URL and the path.',
+  );
+  assert.equal(
+    normalizeApiError(502, '<!DOCTYPE html><html><head><title>502 Bad Gateway</title></head><body><h1>502</h1></body></html>').message,
+    'HTTP 502 Bad Gateway (the system answered with a web page, not JSON). A gateway could not reach the system behind it.',
+  );
+  assert.equal(normalizeApiError(400, 'Plain text error').message, 'Plain text error');
+  assert.match(normalizeApiError(500, '<html><head><title>Runtime Error</title></head></html>').message, /^HTTP 500 Internal Server Error: Runtime Error \(/);
+});
+
+test('dynamic values work in headers, query and URL too', async () => {
+  const { resolveString } = await import('../src/services/template.js');
+  assert.match(resolveString('{{$guid}}', {}), /^[0-9a-f-]{36}$/);
+  assert.match(resolveString('https://x/{{$timestamp}}', {}), /^https:\/\/x\/\d{10}$/);
+  assert.throws(() => resolveString('{{$nope}}', {}), /Unknown dynamic value/);
+});
+
+test('the json filter turns pasted JSON into the body, and reports bad JSON', async () => {
+  const { resolveDeep } = await import('../src/services/template.js');
+  assert.deepEqual(resolveDeep('{{form.body | json}}', { form: { body: '{"a":[1,2]}' } }), { a: [1, 2] });
+  assert.equal(resolveDeep('{{form.body | json}}', { form: { body: '' } }), undefined);
+  assert.throws(() => resolveDeep('{{form.body | json}}', { form: { body: '{a:' } }), /not valid JSON/);
+});

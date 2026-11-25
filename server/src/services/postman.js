@@ -184,13 +184,21 @@ function description(d) {
 const ICON_BY_METHOD = { GET: 'globe', POST: 'document', PUT: 'document', PATCH: 'document', DELETE: 'document' };
 
 /** Flattens folders; requests keep their own name and remember their top-level folder (the group in the menu). */
-function flatten(items, out = [], folder = undefined) {
+/** Requests in file order, with their top-level folder (the group) and the sign-in a folder sets for them. */
+function flatten(items, out = [], folder = undefined, folderAuth = undefined) {
   for (const it of items ?? []) {
-    if (Array.isArray(it?.item)) flatten(it.item, out, folder ?? (String(it.name ?? '').trim() || undefined));
-    else if (it?.request) out.push({ item: it, folder });
+    if (Array.isArray(it?.item)) {
+      const own = it.auth && it.auth.type && it.auth.type !== 'inherit' ? it.auth : folderAuth;
+      flatten(it.item, out, folder ?? (String(it.name ?? '').trim() || undefined), own);
+    } else if (it?.request) out.push({ item: it, folder, folderAuth });
   }
   return out;
 }
+
+const RAW_CONTENT_TYPE = { xml: 'application/xml', html: 'text/html', text: 'text/plain', javascript: 'application/javascript' };
+
+/** A body value that is only a collection variable ({{company}}, defined in the file): sent from the module, not typed on the form. */
+const MODULE_VALUE = /^\s*\{\{\s*(?!\$)[^{}]+\}\}\s*$/;
 
 export function buildPostmanPlan(doc, { moduleName } = {}) {
   const variables = new Set();
@@ -205,12 +213,36 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
   let authSource = auth ? 'collection' : null;
   const requests = [];
   const usedNames = new Set();
+  const warnings = [];
 
-  for (const { item: it, folder } of flatten(doc.item)) {
+  /** A secret from a request's own sign-in goes to an (encrypted) module variable; the form refers to it. */
+  const secretByValue = new Map();
+  const secretVar = (base, value) => {
+    const v = String(value ?? '');
+    if (/^\s*\{\{[^}]+\}\}\s*$/.test(v)) {
+      collectVariables(v, variables);
+      return v.trim();
+    }
+    const known = secretByValue.get(`${base}\u0000${v}`);
+    if (known) return `{{${known}}}`;
+    let name = base;
+    for (let i = 2; variables.has(name); i += 1) name = `${base}${i}`;
+    variables.add(name);
+    variableValues[name] = v;
+    secretByValue.set(`${base}\u0000${v}`, name);
+    return `{{${name}}}`;
+  };
+  const collectionAuth = JSON.stringify(doc.auth ?? null);
+
+  for (const { item: it, folder, folderAuth } of flatten(doc.item)) {
     const req = typeof it.request === 'string' ? { method: 'GET', url: it.request } : it.request;
     const M = String(req.method || 'GET').toUpperCase();
     const fullUrl = rawUrl(req.url).trim();
     const body = req.body;
+    if (!fullUrl) {
+      warnings.push(`"${it.name || 'Unnamed request'}" has no URL and was skipped.`);
+      continue;
+    }
 
     if (isTokenRequest(M, fullUrl, body)) {
       if (!auth || auth.type === 'none') {
@@ -246,11 +278,34 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
     }
     collectVariables(headers, variables);
 
+    // the request's own sign-in (or its folder's), when it differs from the collection's
+    let formAuth = { type: 'module' };
+    const ownRaw = req.auth && req.auth.type && req.auth.type !== 'inherit' ? req.auth : folderAuth;
+    if (ownRaw && JSON.stringify(ownRaw) !== collectionAuth) {
+      const p = authParams(ownRaw[ownRaw.type]);
+      if (ownRaw.type === 'apikey' && p.in === 'query') {
+        query[p.key || 'api_key'] = secretVar('apiKey', p.value);
+        formAuth = { type: 'none' };
+      } else {
+        const own = postmanAuth(ownRaw);
+        if (!own) warnings.push(`"${it.name}" uses a "${ownRaw.type}" sign-in that cannot be imported; it uses the module's sign-in.`);
+        else if (own.type === 'none') formAuth = { type: 'none' };
+        else if (own.type === 'basic') formAuth = { type: 'basic', username: own.username, password: secretVar('basicPassword', own.password) };
+        else if (own.type === 'bearer_static') formAuth = { type: 'bearer_static', token: secretVar('bearerToken', own.token) };
+        else if (own.type === 'api_key') formAuth = { type: 'api_key', headerName: own.headerName, value: secretVar('apiKey', own.value) };
+        else {
+          formAuth = { ...own, ...(own.clientSecret ? { clientSecret: secretVar('clientSecret', own.clientSecret) } : {}), ...(own.password ? { password: secretVar('password', own.password) } : {}) };
+          collectVariables(own.tokenUrl, variables);
+        }
+      }
+    }
+
     const api = { method: M, url };
     if (Object.keys(query).length) api.query = query;
     if (Object.keys(headers).length) api.headers = headers;
 
     let formSchema;
+    let uiSchema;
     if (body && !['GET', 'DELETE'].includes(M)) {
       let bodySchema = null;
       let empty;
@@ -261,18 +316,49 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
           empty = emptySkeleton(parsed);
         }
         else {
+          // XML, text…: one box with the body, sent as it is with its own Content-Type
           properties.body = { type: 'string', title: 'Body', default: String(body.raw) };
           api.bodyTemplate = '{{form.body}}';
+          api.bodyType = 'text';
+          const typed = (req.header ?? []).find((h) => h?.key && !h.disabled && /^content-type$/i.test(h.key));
+          const lang = body.options?.raw?.language;
+          const contentType = typed?.value || RAW_CONTENT_TYPE[lang] || (/^\s*</.test(String(body.raw)) ? 'application/xml' : 'text/plain');
+          api.headers = { ...api.headers, 'Content-Type': String(contentType) };
+          uiSchema = { body: { 'ui:widget': 'textarea', 'ui:options': { rows: 8 } } };
         }
+      } else if (body.mode === 'graphql' && body.graphql?.query) {
+        // a GraphQL call is a JSON body { query, variables }
+        const vars = parseJsonBody(body.graphql.variables || '') ?? {};
+        const parsed = { query: String(body.graphql.query), variables: vars && typeof vars === 'object' ? vars : {} };
+        bodySchema = schemaWithDefaults(parsed);
       } else if (['urlencoded', 'formdata'].includes(body.mode)) {
+        if (body.mode === 'formdata' && (body.formdata ?? []).some((p) => p?.type === 'file' && !p.disabled)) {
+          warnings.push(`"${it.name}" sends a file. Files cannot be sent from a form; the other fields were imported.`);
+        }
         const sample = Object.fromEntries((body[body.mode] ?? []).filter((p) => p?.key && !p.disabled && p.type !== 'file').map((p) => [p.key, String(p.value ?? '')]));
         bodySchema = schemaWithDefaults(sample);
         api.bodyType = 'form';
       }
+      // top-level body values that are only a module variable stay out of the form and are sent from the module
+      const fixed = {};
+      if (bodySchema?.type === 'object' && body.mode === 'raw') {
+        const parsed = parseJsonBody(body.raw);
+        for (const [k, v] of Object.entries(parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {})) {
+          // only variables the collection defines: their value is in the module. Others are typed on the form.
+          if (typeof v === 'string' && MODULE_VALUE.test(v) && v.replace(/[{}\s]/g, '') in variableValues) {
+            fixed[k] = v.trim();
+            delete bodySchema.properties?.[k];
+            if (bodySchema.required) bodySchema.required = bodySchema.required.filter((r) => r !== k);
+            if (empty && typeof empty === 'object') delete empty[k];
+            collectVariables(v, variables);
+          }
+        }
+      }
+      const hasFixed = Object.keys(fixed).length > 0;
       if (bodySchema) {
         const isObject = bodySchema.type === 'object';
         let emptyFields = empty;
-        if (isObject && !Object.keys(properties).length) {
+        if (isObject && !Object.keys(properties).length && !hasFixed) {
           formSchema = bodySchema; // body = form data as-is
         } else if (isObject) {
           const bodyTemplate = {};
@@ -283,6 +369,7 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
             bodyTemplate[k] = `{{form.${key}}}`;
             if (empty && k in empty) renamed[key] = empty[k];
           }
+          Object.assign(bodyTemplate, fixed);
           api.bodyTemplate = bodyTemplate;
           emptyFields = Object.keys(renamed).length ? renamed : undefined;
         } else {
@@ -317,10 +404,11 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
         ...(description(req.description ?? it.description) ? { description: description(req.description ?? it.description) } : {}),
         icon: ICON_BY_METHOD[M] ?? 'document',
         ...(folder ? { group: folder.slice(0, 60) } : {}),
-        auth: { type: 'module' },
+        auth: formAuth,
         api,
         source: { format: 'postman', method: M, path: base },
         formSchema,
+        ...(uiSchema ? { uiSchema } : {}),
       },
     });
   }
@@ -335,6 +423,7 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
     variables: [...variables],
     variableValues,
     requests,
+    warnings,
   };
 }
 

@@ -1,3 +1,4 @@
+import { swagger2ToOpenApi3 } from './swagger2.js';
 import YAML from 'yaml';
 
 /**
@@ -39,17 +40,22 @@ export function parseSpec(content) {
   if (doc.info?._postman_id || String(doc.info?.schema ?? '').includes('getpostman')) {
     throw new ImportError('This is a Postman collection file. In Postman, export the collection as "OpenAPI" (YAML or JSON) and import that file.');
   }
-  if (doc.swagger) throw new ImportError('Swagger 2.0 files are not supported. Export or convert the file to OpenAPI 3.');
-  if (!String(doc.openapi ?? '').startsWith('3')) throw new ImportError('The file has no "openapi: 3.x" line, so it is not an OpenAPI 3 document.');
+  if (String(doc.swagger ?? '').startsWith('2')) return parseSpec(swagger2ToOpenApi3(doc));
+  if (!String(doc.openapi ?? '').startsWith('3')) {
+    throw new ImportError('This file is not a Postman collection (v2.0 / v2.1) or an OpenAPI file (Swagger 2.0 or OpenAPI 3). Export the API from Postman or Swagger and import that file.');
+  }
   if (!doc.paths || typeof doc.paths !== 'object' || !Object.keys(doc.paths).length) throw new ImportError('The file has no requests (paths).');
   return doc;
 }
 
 /* ---------------- $ref ---------------- */
 
-function makeResolver(doc) {
+function makeResolver(doc, missing = new Set()) {
   const lookup = (ref) => {
-    if (typeof ref !== 'string' || !ref.startsWith('#/')) return undefined; // external refs are not supported
+    if (typeof ref !== 'string' || !ref.startsWith('#/')) {
+      missing.add(ref); // external refs (other files, URLs) are not supported
+      return undefined;
+    }
     return ref
       .slice(2)
       .split('/')
@@ -63,6 +69,7 @@ function makeResolver(doc) {
     if (value.$ref) {
       if (seen.has(value.$ref)) return {}; // recursive schema -> stop
       const target = lookup(value.$ref);
+      if (target === undefined) missing.add(value.$ref);
       return target === undefined ? {} : deref(target, new Set([...seen, value.$ref]), depth + 1);
     }
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, deref(v, seen, depth + 1)]));
@@ -140,12 +147,13 @@ function decodePath(p) {
   }
 }
 
+/** First server, with its variables filled in. No server, or a relative one: {{baseUrl}} (a module variable). */
 function serverUrl(servers) {
   const s = servers?.[0];
-  if (!s?.url) return '';
-  return s.url
+  const url = String(s?.url ?? '')
     .replace(/\{(\w+)\}/g, (m, name) => s.variables?.[name]?.default ?? m)
     .replace(/\/+$/, '');
+  return /^(https?:)?\/\/|^\{\{/i.test(url) ? url : `{{baseUrl}}${url && !url.startsWith('/') ? '/' : ''}${url}`;
 }
 
 const VARIABLE = /\{\{\s*([A-Za-z_][\w-]*)\s*\}\}/g;
@@ -154,6 +162,12 @@ function collectVariables(text, into) {
 }
 
 /** {customerId} (OpenAPI path parameter) -> {{form.customerId}}; {{tenantId}} (Postman variable) is kept. */
+/** server + path; a path that already has its own address ({{base_url}}/…, https://…) is kept as it is */
+function joinUrl(base, path) {
+  if (/^(\{\{|https?:\/\/)/i.test(path)) return path;
+  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+}
+
 function pathParamsToForm(url) {
   return url.replace(/(?<!\{)\{([A-Za-z_][\w.-]*)\}(?!\})/g, '{{form.$1}}');
 }
@@ -180,8 +194,11 @@ const isTokenRequest = (path, method, body) =>
   method === 'post' &&
   (/\/oauth2(\/v2\.0)?\/token\/?$/i.test(path) || Boolean(body?.schema?.properties?.grant_type));
 
-function authFromSecuritySchemes(schemes) {
-  for (const s of Object.values(schemes ?? {})) {
+/** The module's sign-in: the scheme the file asks for first (top-level security), else the first one it defines. */
+function authFromSecuritySchemes(schemes, security) {
+  const preferred = (security ?? []).flatMap((req) => Object.keys(req ?? {}));
+  const ordered = [...preferred.filter((n) => schemes?.[n]), ...Object.keys(schemes ?? {}).filter((n) => !preferred.includes(n))];
+  for (const s of ordered.map((n) => schemes[n])) {
     if (s?.type === 'oauth2' && s.flows?.clientCredentials?.tokenUrl) {
       const f = s.flows.clientCredentials;
       return { type: 'oauth2_client_credentials', tokenUrl: f.tokenUrl, clientId: '', clientSecret: '', scope: Object.keys(f.scopes ?? {})[0] ?? '' };
@@ -207,7 +224,22 @@ const ICON_BY_METHOD = { GET: 'globe', POST: 'document', PUT: 'document', PATCH:
  * @returns {{ moduleName, auth, authSource, variables: string[], variableValues, requests: Array<{ key, name, method, url, definition }> }}
  */
 export function buildImportPlan(doc, { moduleName } = {}) {
-  const deref = makeResolver(doc);
+  const missingRefs = new Set();
+  const deref = makeResolver(doc, missingRefs);
+  const warnings = [];
+  const schemes = deref(doc.components?.securitySchemes) ?? {};
+  const moduleScheme = (() => {
+    const preferred = (doc.security ?? []).flatMap((r) => Object.keys(r ?? {})).find((n) => schemes[n]);
+    if (preferred) return preferred;
+    return Object.keys(schemes).find((n) => authFromSecuritySchemes({ [n]: schemes[n] }));
+  })();
+  /** a key from an apiKey scheme, as a module variable */
+  const schemeKeyVar = (name) => {
+    const v = `${name.replace(/[^A-Za-z0-9]/g, '') || 'api'}Key`;
+    variables.add(v);
+    if (!(v in variableValues)) variableValues[v] = '';
+    return v;
+  };
   const variables = new Set();
   const variableValues = {};
   const keyVarByValue = new Map();
@@ -235,7 +267,7 @@ export function buildImportPlan(doc, { moduleName } = {}) {
       const body = pickContent(op.requestBody?.content);
 
       if (isTokenRequest(path, method, body)) {
-        const tokenUrl = `${base}${path}`;
+        const tokenUrl = joinUrl(base, path);
         collectVariables(tokenUrl, variables);
         const grant = body?.schema?.properties?.grant_type;
         const isPassword = grant?.default === 'password' || grant?.enum?.includes?.('password');
@@ -247,7 +279,7 @@ export function buildImportPlan(doc, { moduleName } = {}) {
       }
 
       const M = method.toUpperCase();
-      let url = pathParamsToForm(`${base}${path}`);
+      let url = pathParamsToForm(joinUrl(base, path));
       collectVariables(url, variables);
 
       const properties = {};
@@ -273,12 +305,69 @@ export function buildImportPlan(doc, { moduleName } = {}) {
         }
       }
 
+      // the operation's own security, when it differs from the module's sign-in
+      let formAuth = { type: 'module' };
+      const security = op.security ?? doc.security;
+      if (Array.isArray(security)) {
+        const names = security.length ? Object.keys(security[0] ?? {}) : [];
+        if (!names.length) formAuth = { type: 'none' };
+        else {
+          if (!names.includes(moduleScheme)) formAuth = { type: 'none' };
+          for (const n of names) {
+            const sch = schemes[n];
+            if (!sch || n === moduleScheme) continue;
+            if (sch.type === 'apiKey' && (sch.in === 'header' || sch.in === 'query')) {
+              const ref = GATEWAY_KEY.test(sch.name) ? `{{var:${gatewayKeyVar('')}}}` : `{{var:${schemeKeyVar(n)}}}`;
+              if (sch.in === 'header') headers[sch.name] = ref;
+              else query[sch.name] = ref;
+            } else if (formAuth.type === 'none') {
+              const own = authFromSecuritySchemes({ [n]: sch });
+              if (own) formAuth = own;
+              else warnings.push(`${M} ${path}: its "${n}" sign-in cannot be imported; set the form's sign-in by hand.`);
+            }
+          }
+        }
+      }
+
       const api = { method: M, url };
       if (Object.keys(query).length) api.query = query;
       if (Object.keys(headers).length) api.headers = headers;
 
       let formSchema;
-      if (body?.schema && !['GET', 'DELETE'].includes(M)) {
+
+      if (body?.schema && /"format":"binary"/.test(JSON.stringify(body.schema))) {
+        warnings.push(`${M} ${path}: the API takes a file upload. Files cannot be sent from a form; the other fields were imported.`);
+      }
+      let uiSchema;
+      const textBody = body?.type && /xml|^text\//i.test(body.type) && !['GET', 'DELETE'].includes(M);
+      if (textBody) {
+        // XML or plain text: one box with the body, sent as typed with its own Content-Type
+        properties.body = { type: 'string', title: 'Body', ...(typeof body.example === 'string' ? { default: body.example } : {}) };
+        api.bodyTemplate = '{{form.body}}';
+        api.bodyType = 'text';
+        api.headers = { ...api.headers, 'Content-Type': body.type };
+        uiSchema = { body: { 'ui:widget': 'textarea', 'ui:options': { rows: 8 } } };
+        warnings.push(`${M} ${path}: the API takes ${body.type}. The form has one box for the body, sent as it is typed.`);
+      }
+      // a JSON body the file does not describe (no schema, no example, or an object without fields): one box to paste it in
+      const looseBody =
+        body?.type && !textBody && body.bodyType === 'json' && !['GET', 'DELETE'].includes(M) &&
+        (!body.schema || (() => {
+          const f = toFormSchema(body.schema);
+          return (f.type === 'object' || !f.type) && !Object.keys(f.properties ?? {}).length && !f.items && !f.oneOf && !f.anyOf;
+        })());
+      if (looseBody) {
+        properties.body = {
+          type: 'string',
+          title: 'Body (JSON)',
+          description: 'The file does not describe this body. Paste the JSON to send.',
+          ...(body.example && typeof body.example === 'object' ? { default: JSON.stringify(body.example, null, 2) } : {}),
+        };
+        api.bodyTemplate = '{{form.body | json}}';
+        uiSchema = { body: { 'ui:widget': 'textarea', 'ui:options': { rows: 10 } } };
+        warnings.push(`${M} ${path}: the file does not describe the body, so the form has one box to paste the JSON in.`);
+      }
+      if (body?.schema && !textBody && !looseBody && !['GET', 'DELETE'].includes(M)) {
         const bodySchema = toFormSchema(body.schema);
         // the example in the file fills the form, so a request can be sent as it was tested
         const hasExample = body.example && typeof body.example === 'object';
@@ -324,21 +413,33 @@ export function buildImportPlan(doc, { moduleName } = {}) {
           ...(op.description ? { description: String(op.description).slice(0, 2000) } : {}),
           icon: ICON_BY_METHOD[M],
           ...(String(op.tags?.[0] ?? '').trim() ? { group: String(op.tags[0]).trim().slice(0, 60) } : {}),
-          auth: { type: 'module' },
+          auth: formAuth,
           api,
           source: { format: 'openapi', ...(op.operationId ? { operationId: String(op.operationId) } : {}), method: M, path },
           formSchema,
+          ...(uiSchema ? { uiSchema } : {}),
         },
       });
     }
   }
 
   if (!auth) {
-    auth = authFromSecuritySchemes(deref(doc.components?.securitySchemes));
+    auth = authFromSecuritySchemes(moduleScheme ? { [moduleScheme]: schemes[moduleScheme] } : schemes, doc.security);
     if (auth) authSource = 'securitySchemes';
   }
   for (const v of Object.values(auth ?? {})) collectVariables(v, variables);
+  if (variables.has('baseUrl') && !(doc.servers ?? []).some((s) => /^(https?:)?\/\//i.test(String(s?.url ?? '')))) {
+    warnings.unshift('The file has no full server address. Set the module variable "baseUrl" (for example https://api.example.com) before running the forms.');
+    if (!('baseUrl' in variableValues)) variableValues.baseUrl = '';
+  }
+  for (const ref of missingRefs) {
+    warnings.push(
+      String(ref).startsWith('#/')
+        ? `The file refers to ${ref}, which it does not contain. Fields that use it are left empty.`
+        : `The file refers to another file (${ref}). Only references inside the same file can be read; fields that use it are left empty.`,
+    );
+  }
 
   const name = String(moduleName || doc.info?.title || 'Imported API').trim().slice(0, 60);
-  return { moduleName: name, auth: auth ?? { type: 'none' }, authSource, variables: [...variables], variableValues, requests };
+  return { moduleName: name, auth: auth ?? { type: 'none' }, authSource, variables: [...variables], variableValues, requests, warnings };
 }

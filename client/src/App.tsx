@@ -56,6 +56,7 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [linkNotice, setLinkNotice] = useState<string | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try { return localStorage.getItem('sf.navCollapsed') === '1' } catch { return false }
   })
@@ -118,8 +119,14 @@ export default function App() {
         const user = await api.me()
         const fromLink = fromHash()
         const list = await loadWorkspaces(user.isAdmin)
+        const linked = fromLink.workspaceId ? list.find((w) => w.id === fromLink.workspaceId) : undefined
         selectWorkspace(pickWorkspace(list, [fromLink.workspaceId, currentWorkspaceId()]))
-        setView(fromLink.view)
+        if (fromLink.workspaceId && !linked) {
+          setLinkNotice('That link points to a workspace you cannot open. It may have been deleted, or it belongs to someone else.')
+          setView({ kind: 'welcome' })
+        } else {
+          setView(fromLink.view)
+        }
         setBoot({ phase: 'ready', user })
         await refresh()
       } catch (e) {
@@ -143,6 +150,34 @@ export default function App() {
             : ws
     if (hash !== location.hash) history.replaceState(null, '', hash)
   }, [view, boot.phase, workspaceId])
+
+  // a link pasted into an open tab, or a hash typed by hand: open what it points to
+  useEffect(() => {
+    if (boot.phase !== 'ready') return
+    const onHash = () => {
+      const target = fromHash()
+      setLinkNotice(null)
+      if (target.workspaceId && target.workspaceId !== workspaceId) {
+        const w = workspaces.find((x) => x.id === target.workspaceId)
+        if (!w) {
+          setLinkNotice('That link points to a workspace you cannot open. It may have been deleted, or it belongs to someone else.')
+          setView({ kind: 'welcome' })
+          return
+        }
+        selectWorkspace(w)
+        setForms([])
+        setFormsLoading(true)
+        setListError(null)
+        setMenuOpen(false)
+        setView(target.view)
+        void refresh()
+        return
+      }
+      setView(target.view)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [boot.phase, workspaceId, workspaces, selectWorkspace, refresh])
 
   const goHome = useCallback(() => setView({ kind: 'welcome' }), [])
 
@@ -263,6 +298,12 @@ export default function App() {
           <button className="menu-btn" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
             <Icon name="menu" size={18} />
           </button>
+          {linkNotice && (
+            <div className="banner banner-error link-notice" role="alert">
+              <span>{linkNotice}</span>
+              <button className="btn btn-ghost" onClick={() => setLinkNotice(null)} aria-label="Close">×</button>
+            </div>
+          )}
 
           {listError && <div className="page"><div className="banner banner-error">{listError}</div></div>}
 

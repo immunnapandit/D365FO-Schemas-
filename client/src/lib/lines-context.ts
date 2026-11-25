@@ -1,17 +1,20 @@
 import { createContext } from 'react'
 import type { GridColumn } from './array-grid'
 
-/** Shared by a lines grid and its rows: which line is selected and where its details go. */
-export interface LinesState {
+/**
+ * Set by a grid row for the fields of its line: they render as cells of the row instead of labelled fields.
+ * Lists inside the line open their own grid in `subEl`, the full-width area under the row.
+ */
+export interface GridRowState {
+  /** the path of the line in the form data, e.g. ["req", 0] */
+  path: (string | number)[]
+  /** column index (from 0) of each field path inside the line */
+  columnOf: Map<string, number>
   columns: GridColumn[]
-  rows: unknown[]
-  rowErrors: boolean[]
-  selected: number
-  select: (index: number, focusRow?: boolean) => void
-  detailsEl: HTMLElement | null
-  title: string
-  /** few fields per line: they are typed right in the grid and there is no details panel */
-  editable: boolean
+  subEl: HTMLElement | null
+  /** lists inside this line that are open under it */
+  open: Set<string>
+  toggle: (key: string) => void
 }
 
-export const LinesContext = createContext<LinesState | null>(null)
+export const GridRowContext = createContext<GridRowState | null>(null)

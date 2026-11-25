@@ -157,15 +157,20 @@ See the react-jsonschema-form documentation for all `uiSchema` options.
 
 ### Lists in a form
 
-A list whose lines have only a few simple fields (up to 8, e.g. item, quantity, price) is a table you fill in place,
-with **Add row**. A list with more fields, or with a list inside each line (e.g. GST invoices with their line items),
-works like the lines of a D365 F&O order: a lines grid shows the key columns (required fields first, then line number,
-item, description, quantity, price, amount), and **Line details** below it shows every field of the selected line,
-with previous/next, move, copy and remove. After a failed submit the lines with errors are marked and the first one
-opens. To choose the grid columns yourself, set them on the list in uiSchema:
+Every list of lines is a grid, as in D365 F&O: a row per line and a column per field, each value typed right in its
+cell. Fields of an object inside a line get a column each (the object's name is shown above the field name). Wide
+lists scroll sideways inside the grid, the line number and the copy / remove buttons stay in view, and the header stays
+on top when the lines scroll. **Add line** adds a line at the bottom.
+
+A list inside a line (e.g. the line items of a GST invoice) has a column with its count; the list opens as its own grid
+under the line, with its own **Add line**. These open by default when the outer list has up to 10 lines; with more, the
+count opens them. After a failed submit the cells with errors are marked in red and the line gets a warning sign.
+
+Lines that are not plain records (a choice between shapes with `oneOf` / `anyOf`, free keys) are shown as cards.
+To change a column width, set it on the list in uiSchema (pixels, by field path):
 
 ```json
-{ "lines": { "ui:options": { "gridColumns": ["lineNo", "itemNumber", "quantity", "lineAmount"] } } }
+{ "lines": { "ui:options": { "columnWidths": { "itemNumber": 220, "customer.name": 200 } } } }
 ```
 
 ## Error stages shown to the user
@@ -184,7 +189,23 @@ opens. To choose the grid columns yourself, set them on the list in uiSchema:
   schema) fills the form, lists included, so a request can be sent as it was tested. Fields named like a password,
   secret, token or key are left empty.
 - **Dynamic values.** `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}` in a form
-  value get a fresh value on every submit, as in Postman. Other `{{...}}` text typed in a field is sent as it is.
+  value, a URL, a query value or a header get a fresh value on every submit, as in Postman. Other `{{...}}` text typed
+  in a field is sent as it is.
+- **Sign-in per request.** A Postman request (or folder) whose sign-in differs from the collection's keeps its own:
+  No auth, Basic, Bearer token, API key (header or query) or OAuth 2.0. Its password, token or key goes to an encrypted
+  module variable (`basicPassword`, `bearerToken`, `apiKey`…) that the form refers to. In OpenAPI, `security: []` on an
+  operation means no sign-in, and an `apiKey` scheme becomes a header or query value from a module variable.
+- **Body values from the module.** A top-level body value that is only a collection variable (`"company": "{{company}}"`,
+  with `company` defined in the collection) is not a form field: it is sent with the module's value.
+- **Other bodies.** Form-urlencoded and form-data bodies are sent as a form (files are left out, with a warning).
+  GraphQL bodies become `{ query, variables }`. XML and text bodies get one text box and are sent as typed with their
+  `Content-Type` (`api.bodyType: "text"`). A JSON body the file does not describe gets one box to paste the JSON in
+  (`"bodyTemplate": "{{form.body | json}}"`; bad JSON is reported before anything is sent).
+- **Files accepted.** Postman collections v2.0 and v2.1, OpenAPI 3.0 and 3.1 (YAML or JSON) and Swagger 2.0 (converted
+  on import). Without a full server address the URLs start with `{{baseUrl}}`, a module variable to fill in. References
+  to other files (`$ref: other.yaml#/...`) cannot be read; the preview lists them.
+- **Warnings.** The preview lists what the import could not take over (a request without a URL is skipped, a file
+  upload, an XML body, a missing reference). The rest of the file is still imported.
 - **Groups.** The top-level folder of a Postman request, or the first tag of an OpenAPI operation, becomes the form's
   `group`: the menu and the home page show the forms of a module under these groups.
 

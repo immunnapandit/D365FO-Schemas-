@@ -27,6 +27,30 @@ function collectInner(inner, out) {
   }
 }
 
+const STATUS_TEXT = {
+  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed',
+  408: 'Request Timeout', 413: 'Payload Too Large', 415: 'Unsupported Media Type', 429: 'Too Many Requests',
+  500: 'Internal Server Error', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
+const STATUS_HINT = {
+  404: 'Check the URL and the path.',
+  405: 'Check the method (GET, POST, ...).',
+  415: 'The API may expect another body type.',
+  502: 'A gateway could not reach the system behind it.',
+  503: 'The system may be down or restarting. Try again later.',
+  504: 'A gateway waited too long for the system behind it.',
+};
+
+/** An HTML error page (gateway, web server) as one readable line: status, the page's title or text, and a hint. */
+function htmlText(status, html) {
+  const pick = (re) => (html.match(re)?.[1] ?? '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const text = pick(/<title[^>]*>([\s\S]*?)<\/title>/i) || pick(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || pick(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const head = `HTTP ${status}${STATUS_TEXT[status] ? ` ${STATUS_TEXT[status]}` : ''}`;
+  const rest = text.replace(new RegExp(`^${status}\\b[\\s:-]*`), '').trim(); // "502 Bad Gateway" adds nothing to the status
+  const said = rest && rest.toLowerCase() !== (STATUS_TEXT[status] ?? '').toLowerCase() ? `: ${text.slice(0, 300)}` : '';
+  return `${head}${said} (the system answered with a web page, not JSON).${STATUS_HINT[status] ? ` ${STATUS_HINT[status]}` : ''}`;
+}
+
 export function normalizeApiError(status, body) {
   const details = [];
   let message;
@@ -57,7 +81,7 @@ export function normalizeApiError(status, body) {
       if (body.ExceptionMessage) details.push(body.ExceptionMessage);
     }
   } else if (typeof body === 'string' && body.trim()) {
-    message = body.trim().slice(0, 1000);
+    message = /^\s*(<!doctype|<html|<\?xml|<)/i.test(body) && /<\/?[a-z][^>]*>/i.test(body) ? htmlText(status, body) : body.trim().slice(0, 1000);
   }
 
   // F&O often says "An error has occurred." on top and puts the real infolog below.

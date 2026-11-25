@@ -140,6 +140,14 @@ export default function ImportPage({ onDone, onCancel }: Props) {
         </div>
       </header>
 
+      {!!preview?.warnings?.length && (
+        <div className="banner banner-info" role="status">
+          <div>
+            <strong>Check after the import</strong>
+            <ul>{preview.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          </div>
+        </div>
+      )}
       {!!errors.length && (
         <div className="banner banner-error" role="alert">
           <div>

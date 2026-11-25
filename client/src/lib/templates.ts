@@ -62,7 +62,7 @@ export const templates: Template[] = [
     def: {
       name: '',
       icon: 'document',
-      auth: { type: 'none' },
+      auth: { type: 'module' }, // sign-in is set once on the module; change it on the Sign-in tab if needed
       api: { method: 'POST', url: '' },
       formSchema: { type: 'object', properties: {} },
       uiSchema: {},

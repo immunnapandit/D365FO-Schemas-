@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { resolveDeep, resolveString } from './template.js';
+import { DYNAMIC, resolveDeep, resolveString } from './template.js';
 import { getAuthHeaders } from './outbound-auth.js';
 import { httpRequest } from './http.js';
 import { StageError, normalizeApiError } from './errors.js';
@@ -139,6 +138,10 @@ function buildRequest(api, ctx) {
       if ((api.bodyType || 'json') === 'form') {
         headers['Content-Type'] ??= 'application/x-www-form-urlencoded';
         body = new URLSearchParams(payload).toString();
+      } else if (api.bodyType === 'text') {
+        // XML, plain text…: sent exactly as typed
+        if (!Object.keys(headers).some((h) => h.toLowerCase() === 'content-type')) headers['Content-Type'] = 'text/plain';
+        body = payload === undefined || payload === null ? '' : typeof payload === 'string' ? payload : JSON.stringify(payload);
       } else {
         headers['Content-Type'] ??= 'application/json';
         body = JSON.stringify(payload);
@@ -170,13 +173,6 @@ export async function testAuth(form, mod) {
  * Postman/Bruno dynamic variables in form values ({{$guid}}, {{$timestamp}}, ...) get a fresh value on every
  * submit, as in Postman. Only these few names are replaced: other {{...}} text typed by a user is sent as it is.
  */
-const DYNAMIC = {
-  guid: () => randomUUID(),
-  randomUUID: () => randomUUID(),
-  timestamp: () => String(Math.floor(Date.now() / 1000)),
-  isoTimestamp: () => new Date().toISOString(),
-  randomInt: () => String(Math.floor(Math.random() * 1001)),
-};
 const DYNAMIC_RE = /\{\{\s*\$(guid|randomUUID|timestamp|isoTimestamp|randomInt)\s*\}\}/g;
 
 export function resolveDynamicValues(v) {

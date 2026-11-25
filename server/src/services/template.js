@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 /**
  * Tiny template engine used inside schema definitions.
  *
@@ -35,6 +36,28 @@ const filters = {
   upper: (v) => (v == null ? v : String(v).toUpperCase()),
   lower: (v) => (v == null ? v : String(v).toLowerCase()),
   trim: (v) => (v == null ? v : String(v).trim()),
+  // JSON typed into a text box -> the value itself (for bodies without a schema)
+  json: (v) => {
+    if (v == null || (typeof v === 'string' && !v.trim())) return undefined;
+    if (typeof v !== 'string') return v;
+    try {
+      return JSON.parse(v);
+    } catch (e) {
+      throw new TemplateError(`The body is not valid JSON: ${e.message}`);
+    }
+  },
+};
+
+/**
+ * Postman dynamic variables: a fresh value on every submit ({{$guid}}, {{$timestamp}}, ...),
+ * in the URL, the query, the headers and the body alike.
+ */
+export const DYNAMIC = {
+  guid: () => randomUUID(),
+  randomUUID: () => randomUUID(),
+  timestamp: () => String(Math.floor(Date.now() / 1000)),
+  isoTimestamp: () => new Date().toISOString(),
+  randomInt: () => String(Math.floor(Math.random() * 1001)),
 };
 
 function getPath(obj, path) {
@@ -62,6 +85,10 @@ function evaluate(expr, ctx) {
     value = getPath(ctx.response ?? {}, source === 'response' ? '' : source.slice(9));
   } else if (source === 'token') {
     value = ctx.token;
+  } else if (source.startsWith('$')) {
+    const make = DYNAMIC[source.slice(1)];
+    if (!make) throw new TemplateError(`Unknown dynamic value "{{${source}}}". Use one of: ${Object.keys(DYNAMIC).map((k) => `{{$${k}}}`).join(', ')}.`);
+    value = make();
   } else if (source.startsWith('var:') || /^[A-Za-z_][\w-]*$/.test(source)) {
     const name = source.startsWith('var:') ? source.slice(4).trim() : source;
     value = ctx.vars?.[name];

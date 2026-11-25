@@ -128,7 +128,10 @@ function ResponseTable({ value }: { value: unknown }) {
         <table className="data-table kv-table">
           <tbody>
             {entries.map(([k, v]) => (
-              <tr key={k}><th scope="row">{k}</th><td>{cell(v)}</td></tr>
+              <tr key={k}>
+                <th scope="row">{k}</th>
+                <td>{v && typeof v === 'object' ? <pre className="cell-json">{JSON.stringify(v, null, 2)}</pre> : cell(v)}</td>
+              </tr>
             ))}
           </tbody>
         </table>

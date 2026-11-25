@@ -22,7 +22,13 @@ export function assertHostAllowed(url, stage, allowed = config.security.allowedH
   if (!allowed.length) return parsed;
   const host = parsed.hostname.toLowerCase();
   const ok = allowed.some((p) => (p.startsWith('*.') ? host.endsWith(p.slice(1)) : host === p));
-  if (!ok) throw new StageError(stage, `Host "${host}" is not in ALLOWED_HOSTS on the server.`);
+  if (!ok) {
+    // nothing was sent: this is a setting of the app, not an answer of the target system
+    throw new StageError(
+      'config',
+      `Host "${host}" is not in ALLOWED_HOSTS on the server, so the request was not sent. Check the URL, or ask the administrator to add the host.`,
+    );
+  }
   return parsed;
 }
 

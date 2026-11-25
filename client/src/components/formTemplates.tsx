@@ -1,19 +1,25 @@
+import { getDefaultRegistry } from '@rjsf/core'
 import { buttonId, getUiOptions } from '@rjsf/utils'
-import type { ArrayFieldItemTemplateProps, ArrayFieldTemplateProps, IconButtonProps } from '@rjsf/utils'
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent } from 'react'
+import type {
+  ArrayFieldItemTemplateProps, ArrayFieldTemplateProps, FieldTemplateProps, IconButtonProps, ObjectFieldTemplateProps, RJSFSchema,
+} from '@rjsf/utils'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { cellText, listLayout } from '../lib/array-grid'
+import { gridTemplate, listLayout } from '../lib/array-grid'
 import type { GridColumn } from '../lib/array-grid'
-import { LinesContext } from '../lib/lines-context'
+import { GridRowContext } from '../lib/lines-context'
 import Icon from './Icon'
 
 /**
- * Form parts for lists in a form (e.g. invoices with their line items). Lists of lines share one design:
- * - few fields per line: the lines grid, typed in place
- * - many fields per line: the lines grid with the key columns and a "Line details" panel for the selected line
- * - anything else: a card per row
+ * Lists in a form are a grid, as in D365 F&O: a row per line, a column per field, every value typed in place,
+ * a scroll bar under the grid when the lines are wide. A list inside a line opens as its own grid under the line.
+ * Lines that are not plain records (choices between shapes, free keys) stay as cards.
  */
+
+const defaults = getDefaultRegistry().templates
+const DefaultFieldTemplate = defaults.FieldTemplate
+const DefaultObjectFieldTemplate = defaults.ObjectFieldTemplate
 
 export function RowButton({ icon, label, onClick, disabled, danger, text }: {
   icon: string; label: string; onClick?: IconButtonProps['onClick']; disabled?: boolean; danger?: boolean; text?: boolean
@@ -41,20 +47,60 @@ export function AddButton({ className, onClick, disabled, id }: IconButtonProps)
   )
 }
 
-/** A list of long rows: lines grid with the key columns, and every field of the selected line below it. */
-function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; fieldCount: number; heading: string; editable: boolean }) {
-  const { canAdd, disabled, readonly, fieldPathId, items, onAddClick, formData, registry, schema, columns, fieldCount, heading, editable } = props
-  const rows = useMemo(() => (Array.isArray(formData) ? formData : []), [formData])
-  const [selected, setSelected] = useState(0)
-  const [detailsEl, setDetailsEl] = useState<HTMLElement | null>(null)
-  const bodyRef = useRef<HTMLTableSectionElement>(null)
-  const added = useRef(false)
-  const count = items.length
-  const current = Math.min(selected, Math.max(count - 1, 0))
+/* ---------------- grid ---------------- */
 
-  // RJSF does not hand list templates their errors, so each line is checked against its schema once
-  // the user has tried to submit; the first line with an error then opens in the details
+interface GridListState {
+  path: (string | number)[]
+  columns: GridColumn[]
+  columnOf: Map<string, number>
+  rowErrors: boolean[]
+}
+const GridListContext = createContext<GridListState | null>(null)
+
+const OPEN_NESTED_UP_TO = 10
+
+const relPath = (path: (string | number)[], from: number) => path.slice(from).join('.')
+
+/** A field of a grid line: a cell in its column (objects add no cell, their fields do). */
+export function FieldTemplate(props: FieldTemplateProps) {
+  const row = useContext(GridRowContext)
+  if (!row) return <DefaultFieldTemplate {...props} />
+  const { children, hidden, schema, fieldPathId, rawErrors, label, required, id } = props
+  if (hidden) return <div className="hidden">{children}</div>
+  const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== 'null') : schema.type
+  if (type === 'object' || (schema.properties && !schema.type)) return <>{children}</>
+  const key = relPath(fieldPathId.path, row.path.length)
+  const col = row.columnOf.get(key)
+  if (col === undefined) return <div className="hidden">{children}</div>
+  const errs = rawErrors?.filter(Boolean) ?? []
+  const column = row.columns[col]
+  return (
+    <div role="gridcell" className={`g-cell g-${column.kind}${errs.length ? ' has-error' : ''}`} style={{ gridColumn: col + 2 }}
+      title={errs.length ? errs.join('. ') : undefined}>
+      {column.kind !== 'list' && (
+        <label className="sr-only" htmlFor={id}>{column.group ? `${column.group} › ` : ''}{label || column.title}{required ? ' (required)' : ''}</label>
+      )}
+      {children}
+      {errs.length > 0 && <div className="g-cell-err">{errs[0]}</div>}
+    </div>
+  )
+}
+
+/** An object inside a grid line: no frame and no title, its fields are cells of the line. */
+export function ObjectFieldTemplate(props: ObjectFieldTemplateProps) {
+  const row = useContext(GridRowContext)
+  if (!row) return <DefaultObjectFieldTemplate {...props} />
+  return <>{props.properties.map((p) => p.content)}</>
+}
+
+function ListGrid(props: ArrayFieldTemplateProps & { columns: GridColumn[] }) {
+  const { canAdd, disabled, readonly, fieldPathId, items, onAddClick, formData, registry, schema, columns } = props
+  const rows = useMemo(() => (Array.isArray(formData) ? formData : []), [formData])
+  const columnOf = useMemo(() => new Map(columns.map((c, i) => [c.key, i])), [columns])
   const rootRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // RJSF gives list templates no errors: after a submit attempt each line is checked against its schema
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     const form = rootRef.current?.closest('form')
@@ -71,178 +117,187 @@ function LinesEditor(props: ArrayFieldTemplateProps & { columns: GridColumn[]; f
     })
   }, [attempt, rows, registry, schema.items])
 
-  useEffect(() => {
-    if (added.current) { added.current = false; setSelected(count - 1) }
-  }, [count])
-  useEffect(() => {
-    if (!attempt) return
-    setSelected((cur) => {
-      const first = rowErrors.indexOf(true)
-      return first >= 0 && !rowErrors[cur] ? first : cur
-    })
-    // only when the user submits, not on every keystroke
-  }, [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
+  // lists inside a line open under it, as wide as the visible part of the grid
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const set = () => el.style.setProperty('--vw', `${el.clientWidth}px`)
+    set()
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
-  const select = (i: number, focusRow = false) => {
-    const next = Math.max(0, Math.min(i, count - 1))
-    setSelected(next)
-    if (focusRow) requestAnimationFrame(() => bodyRef.current?.querySelectorAll<HTMLElement>('tr')[next]?.focus())
-  }
-  const add = () => { added.current = true; onAddClick() }
+  const count = items.length
   const errorCount = rowErrors.filter(Boolean).length
+  const state = useMemo(() => ({ path: fieldPathId.path, columns, columnOf, rowErrors }), [fieldPathId.path, columns, columnOf, rowErrors])
+  const addLine = () => {
+    onAddClick()
+    requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+      el.querySelectorAll<HTMLElement>(':scope > .g > .g-row:last-of-type input, :scope > .g > .g-row:last-of-type select')[0]?.focus()
+    })
+  }
 
   return (
-    <LinesContext.Provider value={{ columns, rows, rowErrors, selected: current, select, detailsEl, title: heading, editable }}>
-      <div className={`lines${editable ? ' lines-editable' : ''}`} ref={rootRef}>
-        <div className="lines-bar">
-          {canAdd && (
-            <button type="button" id={buttonId(fieldPathId, 'add')} className="btn btn-sm" onClick={add} disabled={disabled || readonly}>
-              <Icon name="plus" /> Add line
-            </button>
-          )}
-          <span className="lines-count">
-            {count === 1 ? '1 line' : `${count} lines`}
-            {errorCount > 0 && <b className="lines-count-err"> · {errorCount === 1 ? '1 line needs attention' : `${errorCount} lines need attention`}</b>}
-          </span>
-          {!editable && <span className="lines-hint">{fieldCount} fields per line · select a line to edit all of them</span>}
-        </div>
-        <div className="lines-scroll">
-          <table className="lines-grid" style={{ '--cols': columns.length } as CSSProperties}>
-            <thead>
-              <tr>
-                <th className="lines-no" scope="col">#</th>
-                {columns.map((c) => (
-                  <th key={c.key} scope="col" className={c.numeric ? 'num' : undefined} title={c.title}>
-                    {c.title}{c.required && <span className="req" aria-hidden="true"> *</span>}
-                  </th>
+    <GridListContext.Provider value={state}>
+      <GridRowContext.Provider value={null}>
+        <div className="lines" ref={rootRef}>
+          <div className="lines-bar">
+            {canAdd && (
+              <button type="button" id={buttonId(fieldPathId, 'add')} className="btn btn-sm" onClick={addLine} disabled={disabled || readonly}>
+                <Icon name="plus" /> Add line
+              </button>
+            )}
+            <span className="lines-count">
+              {count === 1 ? '1 line' : `${count} lines`}
+              {errorCount > 0 && <b className="lines-count-err"> · {errorCount === 1 ? '1 line needs attention' : `${errorCount} lines need attention`}</b>}
+            </span>
+            {columns.length > 6 && <span className="lines-hint">{columns.length} columns · scroll sideways for more</span>}
+          </div>
+          <div className="g-scroll" ref={scrollRef}>
+            <div className="g" role="grid" aria-rowcount={count + 1} aria-colcount={columns.length + 2}
+              style={{ gridTemplateColumns: gridTemplate(columns) } as CSSProperties}>
+              <div className="g-row g-head" role="row">
+                <div className="g-hcell g-no" role="columnheader">#</div>
+                {columns.map((c, i) => (
+                  <div key={c.key || 'value'} className={`g-hcell g-${c.kind}`} role="columnheader" style={{ gridColumn: i + 2 }}
+                    title={c.group ? `${c.group} › ${c.title}` : c.title}>
+                    {c.group && <span className="g-hgroup">{c.group}</span>}
+                    <span className="g-htitle">{c.title}{c.required && <span className="req" aria-hidden="true"> *</span>}</span>
+                  </div>
                 ))}
-                <th className="lines-tools" scope="col"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody ref={bodyRef}>{items}</tbody>
-          </table>
-          {count === 0 && (
-            <div className="lines-empty">
-              No lines yet.
-              {canAdd && <button type="button" className="btn btn-sm" onClick={add} disabled={disabled || readonly}><Icon name="plus" /> Add line</button>}
+                <div className="g-hcell g-tools" role="columnheader" style={{ gridColumn: columns.length + 2 }}><span className="sr-only">Actions</span></div>
+              </div>
+              {items}
             </div>
-          )}
+            {count === 0 && (
+              <div className="lines-empty">
+                No lines yet.
+                {canAdd && <button type="button" className="btn btn-sm" onClick={addLine} disabled={disabled || readonly}><Icon name="plus" /> Add line</button>}
+              </div>
+            )}
+          </div>
         </div>
-        {!editable && <section className="line-details" ref={setDetailsEl} aria-label="Line details" hidden={count === 0} />}
-      </div>
-    </LinesContext.Provider>
+      </GridRowContext.Provider>
+    </GridListContext.Provider>
   )
 }
 
-/** Lists of rows: a table, a lines grid with details, or cards (see LinesEditor and listLayout). */
+/** One line of a grid: number, a cell per field, copy / remove, and the lists inside the line under it. */
+function GridRow(props: ArrayFieldItemTemplateProps) {
+  const list = useContext(GridListContext)
+  const { children, buttonsProps: b, hasToolbar, index, totalItems } = props
+  const [subEl, setSubEl] = useState<HTMLDivElement | null>(null)
+  // lists inside a line start open, unless there are many lines (then the count opens them, so long forms stay quick)
+  const [open, setOpen] = useState<Set<string>>(() =>
+    totalItems <= OPEN_NESTED_UP_TO ? new Set(list?.columns.filter((c) => c.kind === 'list').map((c) => c.key)) : new Set())
+  const toggle = useCallback((key: string) => setOpen((cur) => {
+    const next = new Set(cur)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  }), [])
+  const value = useMemo(
+    () => (list ? { path: [...list.path, index], columnOf: list.columnOf, columns: list.columns, subEl, open, toggle } : null),
+    [list, index, subEl, open, toggle],
+  )
+  if (!list || !value) return null
+  const bad = list.rowErrors[index]
+  const off = b.disabled || b.readonly
+  const last = list.columns.length + 2
+  return (
+    <GridRowContext.Provider value={value}>
+      <div className={`g-row${bad ? ' has-error' : ''}`} role="row" aria-rowindex={index + 2}>
+        <div className="g-cell g-no" role="rowheader" style={{ gridColumn: 1 }}>
+          {bad ? <span className="lines-err" title="This line has an error"><Icon name="alert" /></span> : index + 1}
+        </div>
+        {children}
+        <div className="g-cell g-tools" style={{ gridColumn: last }}>
+          {hasToolbar && b.hasCopy && <RowButton icon="plus" label={`Copy line ${index + 1}`} disabled={off} onClick={b.onCopyItem} />}
+          {hasToolbar && b.hasRemove && <RowButton icon="trash" label={`Remove line ${index + 1}`} danger disabled={off} onClick={b.onRemoveItem} />}
+        </div>
+        <div className="g-sub" ref={setSubEl} style={{ gridColumn: '1 / -1' }} />
+      </div>
+    </GridRowContext.Provider>
+  )
+}
+
+/** A list inside a grid line: its count in the cell, its own grid under the line. */
+function NestedList(props: ArrayFieldTemplateProps & { columns: GridColumn[] | null; heading: string }) {
+  const row = useContext(GridRowContext)
+  const { fieldPathId, items, columns, heading, canAdd, onAddClick, disabled, readonly, registry, uiSchema } = props
+  if (!row) return null
+  const key = relPath(fieldPathId.path, row.path.length)
+  const isOpen = row.open.has(key)
+  const n = items.length
+  const lineNo = Number(row.path[row.path.length - 1]) + 1
+  const { ButtonTemplates: { AddButton: Add } } = registry.templates
+  return (
+    <>
+      <button type="button" className={`g-list-btn${isOpen ? ' is-open' : ''}`} onClick={() => row.toggle(key)} aria-expanded={isOpen}
+        title={isOpen ? 'Hide these lines' : 'Show these lines under the line'}>
+        <Icon name={isOpen ? 'up' : 'down'} size={14} /> {n === 1 ? '1 line' : `${n} lines`}
+      </button>
+      {isOpen && row.subEl && createPortal(
+        <GridRowContext.Provider value={null}>
+          <div className="g-sub-inner">
+            <div className="g-sub-head">
+              <strong>{heading}</strong>
+              <span>of line {lineNo}</span>
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => row.toggle(key)}>Hide</button>
+            </div>
+            {columns ? <ListGrid {...props} columns={columns} /> : (
+              <div className="row array-item-list">
+                {items}
+                {canAdd && <Add id={buttonId(fieldPathId, 'add')} className="rjsf-array-item-add" onClick={onAddClick}
+                  disabled={disabled || readonly} uiSchema={uiSchema} registry={registry} />}
+              </div>
+            )}
+          </div>
+        </GridRowContext.Provider>,
+        row.subEl,
+      )}
+    </>
+  )
+}
+
+/** Lists: a grid (cards when lines are not plain records). */
 export function ArrayFieldTemplate(props: ArrayFieldTemplateProps) {
+  const row = useContext(GridRowContext)
   const { canAdd, className, disabled, fieldPathId, uiSchema, items, optionalDataControl, onAddClick, readonly, registry, required, schema, title } = props
   const uiOptions = getUiOptions(uiSchema)
   const { ArrayFieldTitleTemplate: Title, ArrayFieldDescriptionTemplate: Description, ButtonTemplates: { AddButton: Add } } = registry.templates
   const layout = listLayout(schema.items, (uiSchema as Record<string, never> | undefined)?.items, uiSchema)
+  const heading = uiOptions.title || title || (schema as RJSFSchema).title || 'Lines'
+  if (row) return <NestedList {...props} columns={layout.mode === 'grid' ? layout.columns : null} heading={String(heading)} />
   const inTitle = !readonly && !disabled
-  const heading = uiOptions.title || title || 'Line'
   return (
-    <fieldset className={`${className ?? ''}${layout.mode !== 'cards' ? ' array-lines' : ''}`} id={fieldPathId.$id}>
+    <fieldset className={`${className ?? ''}${layout.mode === 'grid' ? ' array-lines' : ''}`} id={fieldPathId.$id}>
       <Title fieldPathId={fieldPathId} title={heading} required={required} schema={schema} uiSchema={uiSchema}
         registry={registry} optionalDataControl={inTitle ? optionalDataControl : undefined} />
       <Description fieldPathId={fieldPathId} description={uiOptions.description || schema.description} schema={schema}
         uiSchema={uiSchema} registry={registry} />
       {!inTitle ? optionalDataControl : undefined}
-      {layout.mode !== 'cards' ? (
-        <LinesEditor {...props} columns={layout.columns} fieldCount={layout.mode === 'lines' ? layout.fieldCount : layout.columns.length}
-          heading={heading} editable={layout.mode === 'inline'} />
-      ) : (
-        <div className="row array-item-list">{items}</div>
+      {layout.mode === 'grid' ? <ListGrid {...props} columns={layout.columns} /> : (
+        <GridRowContext.Provider value={null}>
+          <div className="row array-item-list">{items}</div>
+          {canAdd && <Add id={buttonId(fieldPathId, 'add')} className="rjsf-array-item-add" onClick={onAddClick}
+            disabled={disabled || readonly} uiSchema={uiSchema} registry={registry} />}
+        </GridRowContext.Provider>
       )}
-      {canAdd && layout.mode === 'cards' && <Add id={buttonId(fieldPathId, 'add')} className="rjsf-array-item-add" onClick={onAddClick}
-        disabled={disabled || readonly} uiSchema={uiSchema} registry={registry} />}
     </fieldset>
   )
 }
 
-/** One line of a lines grid: its key values in the grid, and all its fields in "Line details" when selected. */
-function LineRow(props: ArrayFieldItemTemplateProps) {
-  const lines = useContext(LinesContext)
-  const { children, buttonsProps: b, hasToolbar, index, totalItems } = props
-  if (!lines) return null
-  const { columns, rows, rowErrors, selected, select, detailsEl, title, editable } = lines
-  const row = (rows[index] ?? {}) as Record<string, unknown>
-  const isSelected = selected === index
-  const bad = rowErrors[index]
-  const off = b.disabled || b.readonly
-
-  const onKey = (e: KeyboardEvent<HTMLTableRowElement>) => {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'ArrowDown') { e.preventDefault(); select(index + 1, true) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); select(index - 1, true) }
-    else if (e.key === 'Enter') {
-      e.preventDefault()
-      detailsEl?.querySelector<HTMLElement>('input, select, textarea')?.focus()
-    }
-  }
-
-  return (
-    <tr className={`${isSelected ? 'is-selected' : ''}${bad ? ' has-error' : ''}`} tabIndex={0} aria-selected={isSelected}
-      onClick={() => select(index)} onKeyDown={onKey}>
-      <td className="lines-no">{bad ? <span className="lines-err" title="This line has an error"><Icon name="alert" /></span> : index + 1}</td>
-      {editable ? (
-        <td className="lines-edit" colSpan={columns.length} onFocus={() => select(index)}>{children}</td>
-      ) : columns.map((c) => {
-        const text = cellText(row[c.key], c)
-        return <td key={c.key} className={c.numeric ? 'num' : undefined} title={text || undefined}>{text || <span className="lines-blank" />}</td>
-      })}
-      <td className="lines-tools" onClick={(e) => e.stopPropagation()}>
-        {hasToolbar && b.hasRemove && (
-          <RowButton icon="trash" label={`Remove line ${index + 1}`} danger disabled={off}
-            onClick={(e) => { b.onRemoveItem(e); select(Math.min(index, totalItems - 2)) }} />
-        )}
-        {!editable && isSelected && detailsEl && createPortal(
-          <>
-            <header className="line-details-head">
-              <div className="line-details-title">
-                <h3>Line details</h3>
-                <span>{title} · line {index + 1} of {totalItems}</span>
-              </div>
-              <div className="line-details-nav">
-                <RowButton icon="up" label="Previous line" onClick={() => select(index - 1)} disabled={index === 0} />
-                <RowButton icon="down" label="Next line" onClick={() => select(index + 1)} disabled={index >= totalItems - 1} />
-              </div>
-              {hasToolbar && (
-                <div className="line-details-actions">
-                  {(b.hasMoveUp || b.hasMoveDown) && (
-                    <RowButton icon="up" label="Move up" text disabled={off || !b.hasMoveUp}
-                      onClick={(e) => { b.onMoveUpItem(e); select(index - 1) }} />
-                  )}
-                  {(b.hasMoveUp || b.hasMoveDown) && (
-                    <RowButton icon="down" label="Move down" text disabled={off || !b.hasMoveDown}
-                      onClick={(e) => { b.onMoveDownItem(e); select(index + 1) }} />
-                  )}
-                  {b.hasCopy && (
-                    <RowButton icon="plus" label="Copy line" text disabled={off}
-                      onClick={(e) => { b.onCopyItem(e); select(index + 1) }} />
-                  )}
-                  {b.hasRemove && (
-                    <RowButton icon="trash" label="Remove line" text danger disabled={off}
-                      onClick={(e) => { b.onRemoveItem(e); select(Math.min(index, totalItems - 2)) }} />
-                  )}
-                </div>
-              )}
-            </header>
-            <div className="line-details-body">{children}</div>
-          </>,
-          detailsEl,
-        )}
-      </td>
-    </tr>
-  )
-}
-
 export function ArrayFieldItemTemplate(props: ArrayFieldItemTemplateProps) {
+  const list = useContext(GridListContext)
   const { children, buttonsProps: b, hasToolbar, index, totalItems } = props
   const off = b.disabled || b.readonly
   const layout = listLayout(props.schema, props.parentUiSchema?.items as never, props.parentUiSchema)
-  if (layout.mode !== 'cards') return <LineRow {...props} />
+  if (list && layout.mode === 'grid') return <GridRow {...props} />
   return (
     <div className="array-row">
       <div className="array-row-head">
