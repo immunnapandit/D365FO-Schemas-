@@ -9,6 +9,7 @@ import { StageError } from './errors.js';
  *   fields: [{ name: 'CustomerAccount', title: 'Customer account', type: 'string' | 'number' | 'date' | 'enum',
  *              enumType?: 'Microsoft.Dynamics.DataEntities.NoYes', options?: ['Yes', 'No'] }],
  *   company?: true,          // a Company box: dataAreaId eq '…' and cross-company=true
+ *   defaultCompany?, filters?: [{ field, op, value }]   // what the form opens with
  *   top?: 100, maxTop?: 10000, select?: ['CustomerAccount', …], orderBy?: 'CustomerAccount',
  *   dialect?: 'd365' | 'standard'   // d365 (default): "contains" is written as eq '*text*'
  * }

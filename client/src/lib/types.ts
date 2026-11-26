@@ -81,6 +81,8 @@ export interface ODataField {
 export interface ODataList {
   fields: ODataField[]
   company?: boolean
+  defaultCompany?: string
+  filters?: { field: string; op?: string; value?: string; value2?: string }[]
   top?: number
   maxTop?: number
   orderBy?: string

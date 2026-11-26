@@ -58,10 +58,13 @@ export const reencryptDefinition = (def) => mapDefinition(def, (v) => (v.startsW
 
 const isSecretLiteral = (k, v) => SECRET_KEY.test(k) && typeof v === 'string' && v !== '' && !ONLY_PLACEHOLDERS.test(v);
 
+// parts that never hold secrets: the filters of a list form have keys named "value"
+const NO_SECRETS = new Set(['odata']);
+
 function mapSecrets(value, fn, key = '') {
   if (Array.isArray(value)) return value.map((v) => mapSecrets(v, fn));
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapSecrets(v, fn, k)]));
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, NO_SECRETS.has(k) ? v : mapSecrets(v, fn, k)]));
   }
   return isSecretLiteral(key, value) ? fn(value) : value;
 }

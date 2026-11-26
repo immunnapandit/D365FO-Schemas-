@@ -1,3 +1,4 @@
+import { d365ListFromRequest } from './odata-import.js';
 import { ImportError, inferSchema } from './openapi.js';
 
 /**
@@ -301,6 +302,13 @@ export function buildPostmanPlan(doc, { moduleName } = {}) {
     }
 
     const api = { method: M, url };
+    // a D365 entity list (GET …/data/CustomersV3?$filter=…): filters on screen instead of a fixed query
+    const d365List = d365ListFromRequest(M, base, query);
+    if (d365List) {
+      for (const k of Object.keys(query)) delete query[k];
+      Object.assign(query, d365List.query);
+      api.odata = d365List.odata;
+    }
     if (Object.keys(query).length) api.query = query;
     if (Object.keys(headers).length) api.headers = headers;
 

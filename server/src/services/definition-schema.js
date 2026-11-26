@@ -142,6 +142,18 @@ export const definitionSchema = {
               },
             },
             company: { type: 'boolean', description: 'Show a Company box (dataAreaId, with cross-company=true)' },
+            defaultCompany: { type: 'string', maxLength: 10, description: 'Company filled in when the form opens' },
+            filters: {
+              type: 'array',
+              maxItems: 50,
+              description: 'Filters already set when the form opens',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['field'],
+                properties: { field: { type: 'string' }, op: { type: 'string' }, value: { type: 'string' }, value2: { type: 'string' } },
+              },
+            },
             top: { type: 'integer', minimum: 1, maximum: 10000, description: 'Rows asked for by default (100)' },
             maxTop: { type: 'integer', minimum: 1, maximum: 10000 },
             orderBy: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' },

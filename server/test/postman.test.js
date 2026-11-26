@@ -390,3 +390,28 @@ test('raw XML / text bodies are sent as typed; body values that are only a varia
   assert.deepEqual(Object.keys(by.Var.formSchema.properties), ['qty', 'id']);
   assert.deepEqual(by.Var.api.bodyTemplate, { qty: '{{form.qty}}', id: '{{form.id}}', company: '{{company}}' });
 });
+
+test('a D365 entity list (GET …/data/Entity?$filter=…) gets filters on screen', async () => {
+  const { buildPostmanPlan } = await import('../src/services/postman.js');
+  const col = {
+    info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    item: [
+      { name: 'Orders', request: { method: 'GET', url: "{{baseUrl}}/data/SalesOrderHeadersV2?cross-company=true&$filter=dataAreaId eq 'usmf' and SalesOrderStatus eq Microsoft.Dynamics.DataEntities.SalesStatus'Invoiced' and RequestedShippingDate ge 2026-01-01T00:00:00Z and CustomerName eq '*Contoso*'&$top=50&$orderby=SalesOrderNumber desc&$select=SalesOrderNumber,OrderedSalesQuantity,api-version" } },
+      { name: 'One order', request: { method: 'GET', url: "{{baseUrl}}/data/SalesOrderHeadersV2(dataAreaId='usmf',SalesOrderNumber='1')" } },
+    ],
+  };
+  const [list, one] = buildPostmanPlan(col).requests.map((r) => r.definition);
+  const o = list.api.odata;
+  assert.equal(list.api.query, undefined, 'OData options leave the fixed query');
+  assert.equal(o.defaultCompany, 'usmf');
+  assert.equal(o.top, 50);
+  assert.equal(o.orderBy, 'SalesOrderNumber');
+  assert.deepEqual(o.filters, [
+    { field: 'SalesOrderStatus', op: 'eq', value: 'Invoiced' },
+    { field: 'RequestedShippingDate', op: 'ge', value: '2026-01-01' },
+    { field: 'CustomerName', op: 'contains', value: 'Contoso' },
+  ]);
+  assert.deepEqual(o.fields.map((f) => `${f.name}:${f.type}`), ['SalesOrderStatus:enum', 'RequestedShippingDate:date', 'CustomerName:string', 'SalesOrderNumber:string', 'OrderedSalesQuantity:number']);
+  assert.equal(o.fields[0].enumType, 'Microsoft.Dynamics.DataEntities.SalesStatus');
+  assert.equal(one.api.odata, undefined, 'a single record by key is a normal request');
+});

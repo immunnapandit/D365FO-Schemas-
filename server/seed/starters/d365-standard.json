@@ -131,7 +131,7 @@
             "type": "string",
             "title": "Customer account",
             "maxLength": 20,
-            "description": "Leave empty when the company gives numbers automatically"
+            "description": "Required when the company has no automatic numbers for accounts (as in usmf)"
           },
           "OrganizationName": {
             "type": "string",
@@ -316,7 +316,7 @@
             "type": "string",
             "title": "Vendor account",
             "maxLength": 20,
-            "description": "Leave empty when the company gives numbers automatically"
+            "description": "Required when the company has no automatic numbers for accounts (as in usmf)"
           },
           "VendorOrganizationName": {
             "type": "string",

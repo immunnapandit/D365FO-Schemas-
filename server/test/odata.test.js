@@ -101,3 +101,11 @@ test('header + lines: header first, then each line with the new order number', a
   assert.match(bad.details.join(' '), /1 line was created before it/);
   assert.equal(up.state.lines.length, 1, 'the line after the failed one is not sent');
 });
+
+test('the filters a list form opens with are not taken for secrets', async () => {
+  const { maskDefinition, encryptDefinition } = await import('../src/services/secrets.js');
+  const def = { api: { method: 'GET', url: 'https://x/data/A', odata: { fields: [{ name: 'G' }], filters: [{ field: 'G', op: 'eq', value: '30' }] } }, auth: { type: 'api_key', headerName: 'X', value: 'k1' } };
+  assert.equal(maskDefinition(def).api.odata.filters[0].value, '30');
+  assert.equal(encryptDefinition(def).api.odata.filters[0].value, '30');
+  assert.equal(maskDefinition(def).auth.value, '••••••••', 'an API key is still a secret');
+});
