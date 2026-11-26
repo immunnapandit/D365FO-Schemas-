@@ -173,6 +173,69 @@ To change a column width, set it on the list in uiSchema (pixels, by field path)
 { "lines": { "ui:options": { "columnWidths": { "itemNumber": 220, "customer.name": 200 } } } }
 ```
 
+### List forms: find records with filters (OData)
+
+A GET form with `api.odata` shows a **Filters** box instead of fields: the user picks a field, a condition and a value
+(several filters are joined with *and*), a company, a sort and the number of rows, then **Load records**. The server
+writes `$filter`, `$orderby`, `$top` and `$count` (and `cross-company=true` with a company). Only the listed fields can
+be filtered, and every value is written as a literal of its type, so nothing typed can change the query in another way.
+
+```json
+"api": {
+  "method": "GET",
+  "url": "{{baseUrl}}/data/CustomersV3",
+  "odata": {
+    "company": true,
+    "top": 100,
+    "orderBy": "CustomerAccount",
+    "select": ["dataAreaId", "CustomerAccount", "OrganizationName", "CustomerGroupId"],
+    "fields": [
+      { "name": "CustomerAccount", "title": "Customer account" },
+      { "name": "CreditLimit", "title": "Credit limit", "type": "number" },
+      { "name": "RequestedShippingDate", "title": "Requested ship date", "type": "date" },
+      { "name": "SalesOrderStatus", "title": "Status", "type": "enum",
+        "enumType": "Microsoft.Dynamics.DataEntities.SalesStatus", "options": ["Backorder", "Delivered", "Invoiced", "Canceled"] }
+    ]
+  }
+}
+```
+
+| type | conditions | written as |
+|---|---|---|
+| `string` (default) | is, is not, contains, starts with, ends with | `'text'`; on D365 *contains* is `eq '*text*'` (F&O has no `contains()`; set `"dialect": "standard"` for other OData services) |
+| `number` | =, ≠, >, ≥, <, ≤, between | `100` |
+| `date` | on, on or after, on or before, after, before, from … to | `2026-01-01T00:00:00Z` (an end date runs to 23:59:59) |
+| `enum` | is, is not | `Microsoft.Dynamics.DataEntities.NoYes'Yes'` |
+
+`select` keeps the grid to useful columns (D365 entities have hundreds). The records come back in a grid: search,
+sort by a column, pages of 100, and **Export to Excel** (an .xlsx of the records shown, all columns). Any response
+with a list (`{ "value": [...] }` or an array) is shown the same way.
+
+### Header + lines (e.g. a sales order)
+
+`api.lines` sends the header first, then each line of a list field to its own URL, adding values from the header the
+API created:
+
+```json
+"lines": {
+  "field": "lines",
+  "url": "{{baseUrl}}/data/SalesOrderLines",
+  "set": { "dataAreaId": "{{form.dataAreaId | lower}}", "SalesOrderNumber": "{{response.SalesOrderNumber}}" }
+}
+```
+
+The header is sent without the list. Lines go one at a time, in order; at the first line that fails the others are not
+sent, and the result says which lines were created (the header and those lines stay in the system).
+
+### D365 F&O standard forms
+
+**Workspaces → New workspace → Start with the D365 F&O standard forms** adds a module *D365 F&O* and 9 forms:
+Customers, Vendors, Released products, Sales orders and Sales order lines (lists with filters and Excel export), and
+Create customer, Create vendor, Create released product and Create sales order (header + lines). In the module set
+`baseUrl` (e.g. `https://myenv.sandbox.operations.dynamics.com`), `tenantId`, `clientId` and `clientSecret` (an app
+registration that is set up in F&O under *Microsoft Entra ID applications*), and add the F&O host to `ALLOWED_HOSTS`
+(`*.dynamics.com` is there by default).
+
 ## Error stages shown to the user
 
 | stage | meaning |

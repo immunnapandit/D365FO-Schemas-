@@ -4,7 +4,9 @@ import type { RJSFValidationError } from '@rjsf/utils'
 import { validator } from '../lib/validator'
 import { api, ApiError } from '../lib/api'
 import { timeAgo, fullDate } from '../lib/format'
-import type { CurrentUser, ExecuteResult, FormDefinition } from '../lib/types'
+import type { CurrentUser, ExecuteResult, FormDefinition, ODataQueryInput } from '../lib/types'
+import ListQuery from './ListQuery'
+import { emptyQuery } from '../lib/odata'
 import ResultCard, { Pipeline } from './ResultCard'
 import ErrorBoundary from './ErrorBoundary'
 import RunHistory from './RunHistory'
@@ -42,13 +44,18 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
   const [result, setResult] = useState<ExecuteResult | null>(null)
   const [test, setTest] = useState<ExecuteResult | null>(null)
   const [runs, setRuns] = useState(0)
+  const [query, setQuery] = useState<ODataQueryInput>({ filters: [] })
   const resultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
     api
       .getForm(id)
-      .then((d) => !cancelled && setDef(d))
+      .then((d) => {
+        if (cancelled) return
+        setDef(d)
+        if (d.api.odata) setQuery(emptyQuery(d.api.odata))
+      })
       .catch((e: ApiError) => {
         if (cancelled) return
         if (e.status === 404) onMissing()
@@ -70,7 +77,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
     setResult(null)
     setTest(null)
     try {
-      setResult(await api.execute(id, data))
+      setResult(await api.execute(id, def?.api.odata ? { ...data, $query: query } : data))
     } catch (e) {
       const err = e as ApiError
       setResult({ ok: false, stage: 'server', message: err.message, details: err.details, requestId: err.requestId })
@@ -95,6 +102,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
 
   function clear() {
     setFormData({})
+    if (def?.api.odata) setQuery(emptyQuery(def.api.odata))
     setResult(null)
     setResetKey((k) => k + 1)
   }
@@ -173,12 +181,13 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
                 focusOnFirstError
                 disabled={submitting}
               >
-                {!hasFields && <p className="muted">This form has no fields. Submitting sends the request as it is.</p>}
+                {def.api.odata && <ListQuery odata={def.api.odata} value={query} onChange={setQuery} disabled={submitting} />}
+                {!hasFields && !def.api.odata && <p className="muted">This form has no fields. Submitting sends the request as it is.</p>}
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary" disabled={submitting}>
-                    {submitting ? 'Sending…' : (def.api.method || 'POST').toUpperCase() === 'GET' ? 'Send request' : 'Submit'}
+                    {submitting ? 'Sending…' : def.api.odata ? 'Load records' : (def.api.method || 'POST').toUpperCase() === 'GET' ? 'Send request' : 'Submit'}
                   </button>
-                  <button type="button" className="btn btn-quiet" onClick={clear} disabled={submitting}>Clear form</button>
+                  <button type="button" className="btn btn-quiet" onClick={clear} disabled={submitting}>{def.api.odata ? 'Clear filters' : 'Clear form'}</button>
                 </div>
               </Form>
             </ErrorBoundary>
@@ -190,7 +199,7 @@ export default function FormRunner({ id, user, onEdit, onDuplicate, onMissing }:
                 <Pipeline result={null} running authType={authType} />
               </section>
             )}
-            {result && <ResultCard result={result} authType={authType} onClose={() => setResult(null)} />}
+            {result && <ResultCard result={result} authType={authType} name={def.name} onClose={() => setResult(null)} />}
           </div>
         </>
       ) : (

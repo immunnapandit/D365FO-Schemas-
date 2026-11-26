@@ -708,3 +708,58 @@ textarea.input.mono { white-space: pre; overflow-x: auto; }
 .g-sub-inner .g-scroll { max-height: 360px; }
 .lines-err { color: var(--err); display: inline-flex; }
 @media (prefers-reduced-motion: no-preference) { .g-cell { transition: background-color .1s; } }
+
+/* ------------------------------------------------------------ records returned by an API, as a grid */
+.dg { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.dg-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.dg-count { font-weight: 600; font-size: 13.5px; margin-right: auto; }
+.dg-count .muted { font-weight: 400; }
+.dg-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 8px; height: 30px;
+  background: var(--surface); color: var(--ink-soft); }
+.dg-search:focus-within { border-color: var(--ink); box-shadow: 0 0 0 2px var(--accent); }
+.dg-search input { border: 0; outline: 0; font: inherit; font-size: 13.5px; width: 180px; background: transparent; color: var(--ink); }
+.dg-note { margin: 0; padding: 6px 10px; font-size: 13px; background: var(--tint); border-bottom: 1px solid var(--line); }
+.dg-scroll { overflow: auto; max-height: 560px; }
+.dg-table { border-collapse: separate; border-spacing: 0; font-size: 13.5px; min-width: 100%; }
+.dg-table th, .dg-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: left;
+  white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.dg-table thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0; border-bottom-color: var(--line-strong); }
+.dg-table thead th button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 4px; width: 100%; padding: 7px 10px;
+  font-weight: 600; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+.dg-table thead th button:hover { background: var(--tint); }
+.dg-table thead th button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.dg-table thead th.num button { justify-content: flex-end; }
+.dg-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dg-table .dg-no { position: sticky; left: 0; z-index: 1; background: var(--bg); color: var(--ink-soft); text-align: center; font-weight: 400;
+  min-width: 44px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+.dg-table thead .dg-no { z-index: 3; padding: 7px 8px; }
+.dg-table tbody tr:hover td { background: #fafaf6; }
+.dg-table tbody tr:hover .dg-no { background: var(--tint); color: var(--ink); }
+.dg-empty { padding: 12px; color: var(--ink-soft); margin: 0; }
+.dg-pages { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px; }
+
+/* ------------------------------------------------------------ filters of a list form */
+.list-query { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px 14px; margin: 0 0 18px; background: var(--bg); min-width: 0; }
+.list-query legend { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; padding: 0 4px; }
+.lq-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-bottom: 12px; }
+.lq-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-soft); min-width: 180px; }
+.lq-field .form-control { min-height: 34px; }
+.lq-rows { min-width: 0; width: 110px; }
+.lq-check { display: flex; align-items: center; gap: 6px; font-size: 13.5px; height: 34px; }
+.lq-rows-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lq-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lq-row .form-control { width: auto; min-width: 160px; min-height: 34px; flex: 0 1 auto; }
+.lq-row .lq-op { min-width: 120px; }
+.lq-and { width: 48px; font-size: 13px; color: var(--ink-soft); text-align: right; }
+.lq-row .lq-and:not(:first-child) { width: auto; }
+.lq-hint { margin-left: 10px; font-size: 13px; color: var(--ink-soft); }
+
+/* ------------------------------------------------------------ header + lines: what happened to each line */
+.lines-result h3 { font-size: 14px; margin: 14px 0 6px; }
+.lines-result ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.lines-result li { display: flex; align-items: center; gap: 6px; }
+.lines-result li.ok svg { color: var(--ok); }
+.lines-result li.err { color: var(--err); }
+.ws-starter { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 14px; cursor: pointer; }
+.ws-starter input { margin-top: 3px; }
+.ws-starter small { display: block; color: var(--ink-soft); font-size: 13px; margin-top: 2px; }

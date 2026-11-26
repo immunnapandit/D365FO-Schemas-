@@ -1,0 +1,840 @@
+{
+  "name": "D365 F&O standard forms",
+  "module": {
+    "name": "D365 F&O",
+    "description": "Standard data entities of D365 Finance & Operations. Fill in the environment URL, tenant and app registration.",
+    "auth": {
+      "type": "oauth2_client_credentials",
+      "tokenUrl": "https://login.microsoftonline.com/{{tenantId}}/oauth2/v2.0/token",
+      "clientId": "{{clientId}}",
+      "clientSecret": "{{clientSecret}}",
+      "scope": "{{baseUrl}}/.default"
+    },
+    "variables": {
+      "baseUrl": "",
+      "tenantId": "",
+      "clientId": "",
+      "clientSecret": ""
+    },
+    "headers": {}
+  },
+  "forms": [
+    {
+      "name": "Customers",
+      "description": "Find customers and export them to Excel.",
+      "icon": "customer",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "GET",
+        "url": "{{baseUrl}}/data/CustomersV3",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "odata": {
+          "fields": [
+            {
+              "name": "CustomerAccount",
+              "title": "Customer account",
+              "type": "string"
+            },
+            {
+              "name": "OrganizationName",
+              "title": "Name",
+              "type": "string"
+            },
+            {
+              "name": "CustomerGroupId",
+              "title": "Customer group",
+              "type": "string"
+            },
+            {
+              "name": "SalesCurrencyCode",
+              "title": "Currency",
+              "type": "string"
+            },
+            {
+              "name": "AddressCountryRegionId",
+              "title": "Country/region",
+              "type": "string"
+            },
+            {
+              "name": "AddressCity",
+              "title": "City",
+              "type": "string"
+            },
+            {
+              "name": "CreditLimit",
+              "title": "Credit limit",
+              "type": "number"
+            }
+          ],
+          "company": true,
+          "top": 100,
+          "orderBy": "CustomerAccount",
+          "select": [
+            "dataAreaId",
+            "CustomerAccount",
+            "OrganizationName",
+            "CustomerGroupId",
+            "SalesCurrencyCode",
+            "AddressCountryRegionId",
+            "AddressCity",
+            "PrimaryContactEmail",
+            "PrimaryContactPhone",
+            "CreditLimit",
+            "PaymentTerms"
+          ]
+        }
+      },
+      "formSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "Create customer",
+      "description": "Creates a customer (data entity CustomersV3).",
+      "icon": "customer",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "POST",
+        "url": "{{baseUrl}}/data/CustomersV3",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "successMessage": "Customer {{response.CustomerAccount}} created in {{response.dataAreaId}}."
+      },
+      "formSchema": {
+        "type": "object",
+        "required": [
+          "dataAreaId",
+          "OrganizationName",
+          "CustomerGroupId",
+          "SalesCurrencyCode"
+        ],
+        "properties": {
+          "dataAreaId": {
+            "type": "string",
+            "title": "Company",
+            "default": "usmf",
+            "minLength": 1,
+            "maxLength": 4,
+            "description": "Legal entity, e.g. usmf"
+          },
+          "CustomerAccount": {
+            "type": "string",
+            "title": "Customer account",
+            "maxLength": 20,
+            "description": "Leave empty when the company gives numbers automatically"
+          },
+          "OrganizationName": {
+            "type": "string",
+            "title": "Name",
+            "maxLength": 100
+          },
+          "CustomerGroupId": {
+            "type": "string",
+            "title": "Customer group",
+            "maxLength": 10
+          },
+          "SalesCurrencyCode": {
+            "type": "string",
+            "title": "Currency",
+            "default": "USD",
+            "maxLength": 3
+          },
+          "PartyType": {
+            "type": "string",
+            "title": "Party type",
+            "enum": [
+              "Organization",
+              "Person"
+            ],
+            "default": "Organization"
+          },
+          "AddressCountryRegionId": {
+            "type": "string",
+            "title": "Country/region",
+            "maxLength": 10
+          },
+          "AddressStreet": {
+            "type": "string",
+            "title": "Street"
+          },
+          "AddressCity": {
+            "type": "string",
+            "title": "City"
+          },
+          "AddressZipCode": {
+            "type": "string",
+            "title": "ZIP/postal code"
+          },
+          "PrimaryContactEmail": {
+            "type": "string",
+            "title": "Email",
+            "format": "email"
+          },
+          "PrimaryContactPhone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "PaymentTerms": {
+            "type": "string",
+            "title": "Terms of payment"
+          },
+          "CreditLimit": {
+            "type": "number",
+            "title": "Credit limit",
+            "minimum": 0
+          }
+        }
+      },
+      "uiSchema": {
+        "CustomerGroupId": {
+          "ui:placeholder": "e.g. 30"
+        },
+        "AddressCountryRegionId": {
+          "ui:placeholder": "e.g. USA"
+        },
+        "ui:order": [
+          "dataAreaId",
+          "CustomerAccount",
+          "OrganizationName",
+          "CustomerGroupId",
+          "SalesCurrencyCode",
+          "PartyType",
+          "*"
+        ]
+      }
+    },
+    {
+      "name": "Vendors",
+      "description": "Find vendors and export them to Excel.",
+      "icon": "vendor",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "GET",
+        "url": "{{baseUrl}}/data/VendorsV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "odata": {
+          "fields": [
+            {
+              "name": "VendorAccountNumber",
+              "title": "Vendor account",
+              "type": "string"
+            },
+            {
+              "name": "VendorOrganizationName",
+              "title": "Name",
+              "type": "string"
+            },
+            {
+              "name": "VendorGroupId",
+              "title": "Vendor group",
+              "type": "string"
+            },
+            {
+              "name": "CurrencyCode",
+              "title": "Currency",
+              "type": "string"
+            },
+            {
+              "name": "AddressCountryRegionId",
+              "title": "Country/region",
+              "type": "string"
+            },
+            {
+              "name": "AddressCity",
+              "title": "City",
+              "type": "string"
+            }
+          ],
+          "company": true,
+          "top": 100,
+          "orderBy": "VendorAccountNumber",
+          "select": [
+            "dataAreaId",
+            "VendorAccountNumber",
+            "VendorOrganizationName",
+            "VendorGroupId",
+            "CurrencyCode",
+            "AddressCountryRegionId",
+            "AddressCity"
+          ]
+        }
+      },
+      "formSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "Create vendor",
+      "description": "Creates a vendor (data entity VendorsV2).",
+      "icon": "vendor",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "POST",
+        "url": "{{baseUrl}}/data/VendorsV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "successMessage": "Vendor {{response.VendorAccountNumber}} created in {{response.dataAreaId}}."
+      },
+      "formSchema": {
+        "type": "object",
+        "required": [
+          "dataAreaId",
+          "VendorOrganizationName",
+          "VendorGroupId",
+          "CurrencyCode"
+        ],
+        "properties": {
+          "dataAreaId": {
+            "type": "string",
+            "title": "Company",
+            "default": "usmf",
+            "minLength": 1,
+            "maxLength": 4,
+            "description": "Legal entity, e.g. usmf"
+          },
+          "VendorAccountNumber": {
+            "type": "string",
+            "title": "Vendor account",
+            "maxLength": 20,
+            "description": "Leave empty when the company gives numbers automatically"
+          },
+          "VendorOrganizationName": {
+            "type": "string",
+            "title": "Name",
+            "maxLength": 100
+          },
+          "VendorGroupId": {
+            "type": "string",
+            "title": "Vendor group",
+            "maxLength": 10
+          },
+          "CurrencyCode": {
+            "type": "string",
+            "title": "Currency",
+            "default": "USD",
+            "maxLength": 3
+          },
+          "VendorPartyType": {
+            "type": "string",
+            "title": "Party type",
+            "enum": [
+              "Organization",
+              "Person"
+            ],
+            "default": "Organization"
+          },
+          "AddressCountryRegionId": {
+            "type": "string",
+            "title": "Country/region",
+            "maxLength": 10
+          },
+          "AddressStreet": {
+            "type": "string",
+            "title": "Street"
+          },
+          "AddressCity": {
+            "type": "string",
+            "title": "City"
+          },
+          "AddressZipCode": {
+            "type": "string",
+            "title": "ZIP/postal code"
+          }
+        }
+      },
+      "uiSchema": {
+        "VendorGroupId": {
+          "ui:placeholder": "e.g. 10"
+        },
+        "AddressCountryRegionId": {
+          "ui:placeholder": "e.g. USA"
+        }
+      }
+    },
+    {
+      "name": "Released products",
+      "description": "Find released products (items) and export them to Excel.",
+      "icon": "product",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "GET",
+        "url": "{{baseUrl}}/data/ReleasedProductsV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "odata": {
+          "fields": [
+            {
+              "name": "ItemNumber",
+              "title": "Item number",
+              "type": "string"
+            },
+            {
+              "name": "SearchName",
+              "title": "Search name",
+              "type": "string"
+            },
+            {
+              "name": "ProductGroupId",
+              "title": "Product group",
+              "type": "string"
+            },
+            {
+              "name": "ItemModelGroupId",
+              "title": "Item model group",
+              "type": "string"
+            },
+            {
+              "name": "ProductType",
+              "title": "Product type",
+              "type": "enum",
+              "enumType": "Microsoft.Dynamics.DataEntities.EcoResProductType",
+              "options": [
+                "Item",
+                "Service"
+              ]
+            }
+          ],
+          "company": true,
+          "top": 100,
+          "orderBy": "ItemNumber",
+          "select": [
+            "dataAreaId",
+            "ItemNumber",
+            "ProductNumber",
+            "SearchName",
+            "ProductType",
+            "ProductGroupId",
+            "ItemModelGroupId",
+            "InventoryUnitSymbol",
+            "PurchaseUnitSymbol",
+            "SalesUnitSymbol",
+            "PurchasePrice",
+            "SalesPrice"
+          ]
+        }
+      },
+      "formSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "Create released product",
+      "description": "Creates a product and releases it to the company (data entity ReleasedProductCreationsV2).",
+      "icon": "product",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "POST",
+        "url": "{{baseUrl}}/data/ReleasedProductCreationsV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "successMessage": "Item {{response.ItemNumber}} created and released in {{response.dataAreaId}}."
+      },
+      "formSchema": {
+        "type": "object",
+        "required": [
+          "dataAreaId",
+          "ItemNumber",
+          "ProductNumber",
+          "ProductName",
+          "ProductType",
+          "ProductSubType",
+          "ItemModelGroupId",
+          "StorageDimensionGroupName",
+          "TrackingDimensionGroupName"
+        ],
+        "properties": {
+          "dataAreaId": {
+            "type": "string",
+            "title": "Company",
+            "default": "usmf",
+            "minLength": 1,
+            "maxLength": 4,
+            "description": "Legal entity, e.g. usmf"
+          },
+          "ItemNumber": {
+            "type": "string",
+            "title": "Item number",
+            "maxLength": 20
+          },
+          "ProductNumber": {
+            "type": "string",
+            "title": "Product number",
+            "maxLength": 20,
+            "description": "Usually the same as the item number"
+          },
+          "ProductName": {
+            "type": "string",
+            "title": "Product name",
+            "maxLength": 60
+          },
+          "ProductSearchName": {
+            "type": "string",
+            "title": "Search name",
+            "maxLength": 20
+          },
+          "ProductType": {
+            "type": "string",
+            "title": "Product type",
+            "enum": [
+              "Item",
+              "Service"
+            ],
+            "default": "Item"
+          },
+          "ProductSubType": {
+            "type": "string",
+            "title": "Product subtype",
+            "enum": [
+              "Product",
+              "ProductMaster"
+            ],
+            "default": "Product"
+          },
+          "ItemModelGroupId": {
+            "type": "string",
+            "title": "Item model group"
+          },
+          "ProductGroupId": {
+            "type": "string",
+            "title": "Item group"
+          },
+          "StorageDimensionGroupName": {
+            "type": "string",
+            "title": "Storage dimension group"
+          },
+          "TrackingDimensionGroupName": {
+            "type": "string",
+            "title": "Tracking dimension group"
+          },
+          "InventoryUnitSymbol": {
+            "type": "string",
+            "title": "Inventory unit",
+            "default": "ea"
+          },
+          "PurchaseUnitSymbol": {
+            "type": "string",
+            "title": "Purchase unit",
+            "default": "ea"
+          },
+          "SalesUnitSymbol": {
+            "type": "string",
+            "title": "Sales unit",
+            "default": "ea"
+          }
+        }
+      },
+      "uiSchema": {
+        "ItemModelGroupId": {
+          "ui:placeholder": "e.g. FIFO"
+        },
+        "StorageDimensionGroupName": {
+          "ui:placeholder": "e.g. SiteWH"
+        },
+        "TrackingDimensionGroupName": {
+          "ui:placeholder": "e.g. None"
+        },
+        "ProductGroupId": {
+          "ui:placeholder": "e.g. Audio"
+        }
+      }
+    },
+    {
+      "name": "Sales orders",
+      "description": "Find sales orders and export them to Excel.",
+      "icon": "cart",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "GET",
+        "url": "{{baseUrl}}/data/SalesOrderHeadersV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "odata": {
+          "fields": [
+            {
+              "name": "SalesOrderNumber",
+              "title": "Sales order",
+              "type": "string"
+            },
+            {
+              "name": "OrderingCustomerAccountNumber",
+              "title": "Customer account",
+              "type": "string"
+            },
+            {
+              "name": "CustomersOrderReference",
+              "title": "Customer reference",
+              "type": "string"
+            },
+            {
+              "name": "SalesOrderStatus",
+              "title": "Status",
+              "type": "enum",
+              "enumType": "Microsoft.Dynamics.DataEntities.SalesStatus",
+              "options": [
+                "Backorder",
+                "Delivered",
+                "Invoiced",
+                "Canceled"
+              ]
+            },
+            {
+              "name": "RequestedShippingDate",
+              "title": "Requested ship date",
+              "type": "date"
+            },
+            {
+              "name": "CurrencyCode",
+              "title": "Currency",
+              "type": "string"
+            }
+          ],
+          "company": true,
+          "top": 100,
+          "orderBy": "SalesOrderNumber",
+          "select": [
+            "dataAreaId",
+            "SalesOrderNumber",
+            "OrderingCustomerAccountNumber",
+            "InvoiceCustomerAccountNumber",
+            "SalesOrderStatus",
+            "CurrencyCode",
+            "RequestedShippingDate",
+            "RequestedReceiptDate",
+            "CustomersOrderReference",
+            "DefaultShippingSiteId",
+            "DefaultShippingWarehouseId"
+          ]
+        }
+      },
+      "formSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "Sales order lines",
+      "description": "Find sales order lines and export them to Excel.",
+      "icon": "cart",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "GET",
+        "url": "{{baseUrl}}/data/SalesOrderLines",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "odata": {
+          "fields": [
+            {
+              "name": "SalesOrderNumber",
+              "title": "Sales order",
+              "type": "string"
+            },
+            {
+              "name": "ItemNumber",
+              "title": "Item number",
+              "type": "string"
+            },
+            {
+              "name": "RequestedShippingDate",
+              "title": "Requested ship date",
+              "type": "date"
+            },
+            {
+              "name": "OrderedSalesQuantity",
+              "title": "Quantity",
+              "type": "number"
+            }
+          ],
+          "company": true,
+          "top": 100,
+          "orderBy": "SalesOrderNumber",
+          "select": [
+            "dataAreaId",
+            "SalesOrderNumber",
+            "LineNumber",
+            "ItemNumber",
+            "LineDescription",
+            "OrderedSalesQuantity",
+            "SalesUnitSymbol",
+            "SalesPrice",
+            "LineAmount",
+            "ShippingSiteId",
+            "ShippingWarehouseId",
+            "RequestedShippingDate"
+          ]
+        }
+      },
+      "formSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "Create sales order",
+      "description": "Creates the sales order header (SalesOrderHeadersV2), then each line (SalesOrderLines) with the new order number.",
+      "icon": "cart",
+      "category": "D365 F&O",
+      "auth": {
+        "type": "module"
+      },
+      "api": {
+        "method": "POST",
+        "url": "{{baseUrl}}/data/SalesOrderHeadersV2",
+        "headers": {
+          "OData-Version": "4.0"
+        },
+        "bodyTemplate": {
+          "dataAreaId": "{{form.dataAreaId | lower}}",
+          "OrderingCustomerAccountNumber": "{{form.OrderingCustomerAccountNumber}}",
+          "CurrencyCode": "{{form.CurrencyCode}}",
+          "RequestedShippingDate": "{{form.RequestedShippingDate | datetime}}",
+          "CustomersOrderReference": "{{form.CustomersOrderReference}}",
+          "DefaultShippingSiteId": "{{form.DefaultShippingSiteId}}",
+          "DefaultShippingWarehouseId": "{{form.DefaultShippingWarehouseId}}"
+        },
+        "lines": {
+          "field": "lines",
+          "url": "{{baseUrl}}/data/SalesOrderLines",
+          "set": {
+            "dataAreaId": "{{form.dataAreaId | lower}}",
+            "SalesOrderNumber": "{{response.SalesOrderNumber}}"
+          }
+        },
+        "successMessage": "Sales order {{response.SalesOrderNumber}} created in {{response.dataAreaId}}."
+      },
+      "formSchema": {
+        "type": "object",
+        "required": [
+          "dataAreaId",
+          "OrderingCustomerAccountNumber",
+          "CurrencyCode",
+          "lines"
+        ],
+        "properties": {
+          "dataAreaId": {
+            "type": "string",
+            "title": "Company",
+            "default": "usmf",
+            "minLength": 1,
+            "maxLength": 4,
+            "description": "Legal entity, e.g. usmf"
+          },
+          "OrderingCustomerAccountNumber": {
+            "type": "string",
+            "title": "Customer account",
+            "maxLength": 20
+          },
+          "CurrencyCode": {
+            "type": "string",
+            "title": "Currency",
+            "default": "USD",
+            "maxLength": 3
+          },
+          "RequestedShippingDate": {
+            "type": "string",
+            "title": "Requested ship date",
+            "format": "date"
+          },
+          "CustomersOrderReference": {
+            "type": "string",
+            "title": "Customer reference",
+            "maxLength": 60
+          },
+          "DefaultShippingSiteId": {
+            "type": "string",
+            "title": "Site"
+          },
+          "DefaultShippingWarehouseId": {
+            "type": "string",
+            "title": "Warehouse"
+          },
+          "lines": {
+            "type": "array",
+            "title": "Lines",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "ItemNumber",
+                "OrderedSalesQuantity"
+              ],
+              "properties": {
+                "ItemNumber": {
+                  "type": "string",
+                  "title": "Item number",
+                  "maxLength": 20
+                },
+                "OrderedSalesQuantity": {
+                  "type": "number",
+                  "title": "Quantity",
+                  "exclusiveMinimum": 0
+                },
+                "SalesPrice": {
+                  "type": "number",
+                  "title": "Unit price",
+                  "minimum": 0
+                },
+                "SalesUnitSymbol": {
+                  "type": "string",
+                  "title": "Unit"
+                },
+                "ShippingSiteId": {
+                  "type": "string",
+                  "title": "Site"
+                },
+                "ShippingWarehouseId": {
+                  "type": "string",
+                  "title": "Warehouse"
+                }
+              }
+            },
+            "default": [
+              {}
+            ]
+          }
+        }
+      },
+      "uiSchema": {
+        "OrderingCustomerAccountNumber": {
+          "ui:placeholder": "e.g. US-001"
+        }
+      }
+    }
+  ]
+}

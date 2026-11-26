@@ -227,8 +227,8 @@ export default function App() {
     setMenuOpen(false)
     void refresh()
   }
-  async function createWorkspace(name: string) {
-    const created = await api.createWorkspace(name)
+  async function createWorkspace(name: string, starter?: 'd365') {
+    const created = await api.createWorkspace(name, starter)
     setWorkspaces((prev) => [...prev, created].sort((a, b) => Number(b.isMine) - Number(a.isMine) || a.name.localeCompare(b.name)))
     selectWorkspace(created)
     setForms([])
@@ -427,9 +427,10 @@ export default function App() {
               currentId={workspaceId}
               isAdmin={user.isAdmin}
               onOpen={switchWorkspace}
-              onCreate={async (name) => {
-                await createWorkspace(name)
-                setView({ kind: 'workspaces' })
+              onCreate={async (name, starter) => {
+                await createWorkspace(name, starter)
+                // with ready-made forms, open the new workspace to show them
+                if (!starter) setView({ kind: 'workspaces' })
               }}
               onRename={renameWorkspace}
               onDelete={deleteWorkspace}

@@ -162,3 +162,25 @@ test('admins can list and open everyone else\'s workspaces; users only their own
   const seen = (await request(app).get('/api/forms').set(ADMIN).set('X-Workspace-Id', ashaBata.id).expect(200)).body;
   assert.ok(seen.length > 0);
 });
+
+test('a workspace can start with the D365 F&O standard forms', async () => {
+  const ws = await request(app).post('/api/workspaces').set(ASHA).send({ name: 'Demo D365', starter: 'd365' }).expect(201);
+  const h = { ...ASHA, 'X-Workspace-Id': ws.body.id };
+  const list = await request(app).get('/api/forms').set(h).expect(200);
+  assert.deepEqual(list.body.map((f) => f.name).sort(), [
+    'Create customer', 'Create released product', 'Create sales order', 'Create vendor',
+    'Customers', 'Released products', 'Sales order lines', 'Sales orders', 'Vendors',
+  ]);
+  const mods = await request(app).get('/api/modules').set(h).expect(200);
+  assert.equal(mods.body.length, 1);
+  assert.equal(mods.body[0].name, 'D365 F&O');
+  assert.deepEqual(Object.keys(mods.body[0].variables).sort(), ['baseUrl', 'clientId', 'clientSecret', 'tenantId']);
+
+  // empty sign-in settings: a clear message, nothing is sent
+  const customers = list.body.find((f) => f.name === 'Customers');
+  const r = await request(app).post(`/api/forms/${customers.id}/execute`).set(h).send({ formData: { $query: { filters: [] } } }).expect(200);
+  assert.equal(r.body.ok, false);
+  assert.match(r.body.message, /Variable "(tenantId|clientId|clientSecret|baseUrl)" has no value/);
+
+  await request(app).post('/api/workspaces').set(ASHA).send({ name: 'Bad starter', starter: 'sap' }).expect(400);
+});

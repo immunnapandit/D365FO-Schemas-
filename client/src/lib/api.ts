@@ -84,7 +84,7 @@ export const api = {
   definitionSchema: () => request<object>('/api/meta/definition-schema'),
 
   listWorkspaces: (everyone = false) => request<Workspace[]>(`/api/workspaces${everyone ? '?scope=all' : ''}`),
-  createWorkspace: (name: string) => request<Workspace>('/api/workspaces', post({ name })),
+  createWorkspace: (name: string, starter?: 'd365') => request<Workspace>('/api/workspaces', post(starter ? { name, starter } : { name })),
   renameWorkspace: (id: string, name: string) =>
     request<Workspace>(`/api/workspaces/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteWorkspace: (id: string) => request<void>(`/api/workspaces/${enc(id)}`, { method: 'DELETE' }),

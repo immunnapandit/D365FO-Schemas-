@@ -57,6 +57,22 @@ export async function startUpstream() {
     res.status(201).json({ ...req.body, SalesOrderNumber: '001234' });
   });
 
+  // sales order lines: item "BAD" fails like F&O
+  state.lines = [];
+  app.post('/data/SalesOrderLines', authed, (req, res) => {
+    if (req.body.ItemNumber === 'BAD') {
+      return res.status(500).json({ error: { message: 'An error has occurred.', innererror: { message: 'Item number BAD does not exist.' } } });
+    }
+    state.lines.push(req.body);
+    res.status(201).json({ ...req.body, LineCreationSequenceNumber: state.lines.length });
+  });
+  // OData list: records what the query asked for
+  app.get('/data/CustomersV3', authed, (req, res) => {
+    state.lastQuery = req.query;
+    state.lastUrl = req.originalUrl;
+    res.json({ '@odata.count': 2, value: [{ dataAreaId: 'usmf', CustomerAccount: 'US-001' }, { dataAreaId: 'usmf', CustomerAccount: 'US-002' }] });
+  });
+
   app.get('/data/Flaky', authed, (_req, res) => {
     state.flaky += 1;
     if (state.flaky === 1) return res.status(503).set('Retry-After', '0').json({ error: { message: 'busy' } });

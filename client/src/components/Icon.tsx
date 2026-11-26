@@ -18,6 +18,8 @@ const PATHS: Record<string, ReactNode> = {
   // interface icons
   plus: <path d="M12 5v14M5 12h14" />,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
+  download: <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />,
+  filter: <path d="M4 5h16l-6 7.5V19l-4 1.5v-8z" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   x: <path d="M6 6l12 12M18 6L6 18" />,
   minus: <path d="M6 12h12" />,

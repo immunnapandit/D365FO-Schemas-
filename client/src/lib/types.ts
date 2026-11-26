@@ -64,6 +64,41 @@ export interface ApiConfig {
   emptyFields?: unknown
   successMessage?: string
   timeoutMs?: number
+  /** a list form on an OData entity: filters chosen on screen */
+  odata?: ODataList
+  /** header + lines: each line of `field` is sent to `url` after the header */
+  lines?: { field: string; method?: 'POST' | 'PUT' | 'PATCH'; url: string; set?: Record<string, unknown> }
+}
+
+export type ODataFieldType = 'string' | 'number' | 'date' | 'enum'
+export interface ODataField {
+  name: string
+  title?: string
+  type?: ODataFieldType
+  enumType?: string
+  options?: string[]
+}
+export interface ODataList {
+  fields: ODataField[]
+  company?: boolean
+  top?: number
+  maxTop?: number
+  orderBy?: string
+  select?: string[]
+  dialect?: 'd365' | 'standard'
+}
+export interface ODataCondition {
+  field: string
+  op: string
+  value?: string
+  value2?: string
+}
+export interface ODataQueryInput {
+  filters: ODataCondition[]
+  company?: string
+  top?: number
+  orderBy?: string
+  desc?: boolean
 }
 
 export interface ModuleDefinition {
@@ -146,6 +181,8 @@ export interface ExecuteResult {
   durationMs?: number
   executionId?: string
   requestId?: string
+  /** header + lines forms: what happened to each line */
+  lines?: { index: number; ok: boolean; status?: number; message?: string; response?: unknown }[]
 }
 
 export interface FormVersion {

@@ -11,7 +11,7 @@ interface Props {
   currentId: string | null
   isAdmin: boolean
   onOpen: (id: string) => void
-  onCreate: (name: string) => Promise<void>
+  onCreate: (name: string, starter?: 'd365') => Promise<void>
   onRename: (id: string, name: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }
@@ -20,6 +20,7 @@ interface Props {
 export default function WorkspacesPage({ workspaces, currentId, isAdmin, onOpen, onCreate, onRename, onDelete }: Props) {
   const { confirm, notify } = useFeedback()
   const [newName, setNewName] = useState('')
+  const [withD365, setWithD365] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
@@ -38,9 +39,10 @@ export default function WorkspacesPage({ workspaces, currentId, isAdmin, onOpen,
     setCreating(true)
     setCreateError(null)
     try {
-      await onCreate(newName.trim())
-      notify(`Workspace “${newName.trim()}” created`)
+      await onCreate(newName.trim(), withD365 ? 'd365' : undefined)
+      notify(withD365 ? `Workspace “${newName.trim()}” created with the D365 F&O standard forms` : `Workspace “${newName.trim()}” created`)
       setNewName('')
+      setWithD365(false)
     } catch (err) {
       setCreateError((err as Error).message)
     } finally {
@@ -169,6 +171,13 @@ export default function WorkspacesPage({ workspaces, currentId, isAdmin, onOpen,
             {creating ? <span className="spinner" /> : <Icon name="plus" size={16} />} Create workspace
           </button>
         </div>
+        <label className="ws-starter">
+          <input type="checkbox" checked={withD365} onChange={(e) => setWithD365(e.target.checked)} />
+          <span>
+            Start with the D365 F&amp;O standard forms
+            <small>Customers, vendors, released products and sales orders: a form to create each, and a list to find them and export to Excel.</small>
+          </span>
+        </label>
         {createError && <p className="ws-error" role="alert">{createError}</p>}
       </form>
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ExecuteResult } from '../lib/types'
 import Icon from './Icon'
+import DataGrid from './DataGrid'
 
 /**
  * What happened to a submission, as the three things the server does in order:
@@ -88,39 +89,18 @@ function Json({ title, value }: { title: string; value: unknown }) {
 type Row = Record<string, unknown>
 const isRecord = (v: unknown): v is Row => !!v && typeof v === 'object' && !Array.isArray(v)
 const cell = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
-const MAX_ROWS = 200
-const MAX_COLS = 30
 
-/** OData collections ({ value: [...] }) and arrays as a table, single records as field / value rows. */
-function rowsOf(value: unknown): { rows: Row[]; total: number } | null {
+/** OData collections ({ value: [...] }) and arrays of records */
+function listOf(value: unknown): { rows: Row[]; total?: number; more: boolean } | null {
   const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.value) ? value.value : null
   if (!list || !list.every(isRecord)) return null
-  return { rows: list.slice(0, MAX_ROWS) as Row[], total: list.length }
+  const count = isRecord(value) ? Number(value['@odata.count']) : NaN
+  return { rows: list as Row[], total: Number.isFinite(count) ? count : undefined, more: isRecord(value) && typeof value['@odata.nextLink'] === 'string' }
 }
 
-function ResponseTable({ value }: { value: unknown }) {
-  const list = rowsOf(value)
-  if (list) {
-    if (!list.rows.length) return <p className="muted">No records returned.</p>
-    const cols = [...new Set(list.rows.flatMap((r) => Object.keys(r)))].filter((k) => !k.startsWith('@')).slice(0, MAX_COLS)
-    return (
-      <>
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
-            <tbody>
-              {list.rows.map((r, i) => (
-                <tr key={i}>{cols.map((c) => <td key={c} title={cell(r[c])}>{cell(r[c])}</td>)}</tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small">
-          {list.total > list.rows.length ? `Showing ${list.rows.length} of ${list.total} records.` : `${list.total} record${list.total === 1 ? '' : 's'}.`}
-        </p>
-      </>
-    )
-  }
+function ResponseTable({ value, fileName }: { value: unknown; fileName: string }) {
+  const list = listOf(value)
+  if (list) return <DataGrid rows={list.rows} total={list.total} more={list.more} fileName={fileName} />
   if (isRecord(value)) {
     const entries = Object.entries(value).filter(([k]) => !k.startsWith('@'))
     return (
@@ -141,7 +121,7 @@ function ResponseTable({ value }: { value: unknown }) {
   return <pre className="plain-pre">{cell(value)}</pre>
 }
 
-function ResponseView({ value, title }: { value: unknown; title: string }) {
+function ResponseView({ value, title, fileName }: { value: unknown; title: string; fileName: string }) {
   const [mode, setMode] = useState<'table' | 'json'>('table')
   if (value === undefined || value === null || value === '') return null
   const tabular = typeof value === 'object'
@@ -156,14 +136,29 @@ function ResponseView({ value, title }: { value: unknown; title: string }) {
           </div>
         )}
       </div>
-      {tabular && mode === 'table' ? <ResponseTable value={value} /> : (
+      {tabular && mode === 'table' ? <ResponseTable value={value} fileName={fileName} /> : (
         <pre className="json-pre">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</pre>
       )}
     </section>
   )
 }
 
-export default function ResultCard({ result, onClose, authType }: { result: ExecuteResult; onClose?: () => void; authType?: string }) {
+function LinesSummary({ lines }: { lines: NonNullable<ExecuteResult['lines']> }) {
+  return (
+    <section className="lines-result">
+      <h3>Lines</h3>
+      <ol>
+        {lines.map((l) => (
+          <li key={l.index} className={l.ok ? 'ok' : 'err'}>
+            <Icon name={l.ok ? 'check' : 'x'} size={14} /> Line {l.index + 1}: {l.ok ? `created (HTTP ${l.status})` : l.message}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+export default function ResultCard({ result, onClose, authType, name = 'records' }: { result: ExecuteResult; onClose?: () => void; authType?: string; name?: string }) {
   const ok = result.ok
   return (
     <section className={`result ${ok ? 'result-ok' : 'result-err'}`} role={ok ? 'status' : 'alert'}>
@@ -185,7 +180,8 @@ export default function ResultCard({ result, onClose, authType }: { result: Exec
 
       <Pipeline result={result} authType={authType} />
 
-      {ok && <ResponseView title="Response" value={result.response} />}
+      {!!result.lines?.length && <LinesSummary lines={result.lines} />}
+      {ok && <ResponseView title="Response" value={result.response} fileName={name} />}
       <Json title="Request sent" value={result.request} />
       {!ok && <Json title="Error response received" value={result.response} />}
 

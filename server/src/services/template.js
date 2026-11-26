@@ -83,6 +83,9 @@ function evaluate(expr, ctx) {
     value = getPath(ctx.form ?? {}, source === 'form' ? '' : source.slice(5));
   } else if (source === 'response' || source.startsWith('response.')) {
     value = getPath(ctx.response ?? {}, source === 'response' ? '' : source.slice(9));
+  } else if (source === 'line' || source.startsWith('line.')) {
+    // header + lines forms: the line being sent
+    value = getPath(ctx.line ?? {}, source === 'line' ? '' : source.slice(5));
   } else if (source === 'token') {
     value = ctx.token;
   } else if (source.startsWith('$')) {

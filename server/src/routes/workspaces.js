@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { badRequest, conflict, forbidden, HttpError } from '../http-errors.js';
 import * as workspaces from '../repositories/workspaces.js';
 import { logger } from '../logger.js';
+import { addStarter, loadStarter } from '../services/starters.js';
 
 /**
  * Workspaces keep each user's modules, forms and history apart (e.g. "Bata", "Vista").
@@ -102,8 +103,13 @@ router.post(
   wrap(async (req, res) => {
     const name = nameFromBody(req.body);
     await nameFree(req.user.id, name);
+    const starter = req.body?.starter;
+    if (starter !== undefined && starter !== 'd365') throw badRequest('Unknown starter. Use "d365".');
+    if (starter) await loadStarter(starter); // read it first: a starter that cannot be read leaves no empty workspace
     const ws = await workspaces.createWorkspace({ name }, req.user);
-    req.log.info({ workspaceId: ws.id }, 'workspace created');
+    req.log.info({ workspaceId: ws.id, starter }, 'workspace created');
+    // a ready-made set of forms, e.g. the D365 F&O standard entities
+    if (starter) await addStarter(starter, ws.id, req.user);
     res.status(201).json(view(ws, req.user));
   }),
 );

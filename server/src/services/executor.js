@@ -5,6 +5,7 @@ import { getAuthHeaders } from './outbound-auth.js';
 import { httpRequest } from './http.js';
 import { StageError, normalizeApiError } from './errors.js';
 import { resolveKvRefs } from './keyvault.js';
+import { buildODataQuery } from './odata.js';
 
 const BODYLESS = new Set(['GET', 'HEAD', 'DELETE']);
 const IDEMPOTENT = new Set(['GET', 'PUT', 'DELETE']); // safe to retry; POST/PATCH are not (could create duplicates)
@@ -122,16 +123,26 @@ function resolveVars(vars, kv) {
   }
 }
 
+/** OData options keep their $ and use %20 for spaces, as OData services expect */
+function addODataQuery(url, query) {
+  if (!query) return;
+  for (const k of Object.keys(query)) url.searchParams.delete(k);
+  const extra = Object.entries(query).map(([k, v]) => `${k}=${encodeURIComponent(String(v)).replace(/%2C/g, ',')}`).join('&');
+  url.search = url.search ? `${url.search}&${extra}` : `?${extra}`;
+}
+
 function buildRequest(api, ctx) {
   const method = (api.method || 'POST').toUpperCase();
   try {
     const pctx = previewContext(ctx);
     const url = new URL(resolveString(api.url, ctx));
     for (const [k, v] of Object.entries(resolveDeep(api.query || {}, ctx))) url.searchParams.set(k, String(v));
+    addODataQuery(url, ctx.odataQuery);
     const headers = { Accept: 'application/json', ...resolveDeep(ctx.moduleHeaders || {}, ctx), ...resolveDeep(api.headers || {}, ctx) };
     let body;
     const previewUrl = new URL(resolveString(api.url, pctx));
     for (const [k, v] of Object.entries(resolveDeep(api.query || {}, pctx))) previewUrl.searchParams.set(k, String(v));
+    addODataQuery(previewUrl, ctx.odataQuery);
     let preview = { method, url: previewUrl.toString() };
     if (!BODYLESS.has(method)) {
       const payload = api.bodyTemplate !== undefined ? resolveDeep(api.bodyTemplate, ctx) : ctx.form;
@@ -182,6 +193,42 @@ export function resolveDynamicValues(v) {
   return v;
 }
 
+/**
+ * Lines of a header + lines form (sales order header, then its lines): one request per line, in order, after the
+ * header was created. `set` adds values from the header's response, e.g. { "SalesOrderNumber": "{{response.SalesOrderNumber}}" }.
+ * Stops at the first line that fails: the ones before it exist, so they are reported.
+ */
+async function sendLines(spec, rows, ctx, auth) {
+  const out = [];
+  const pctx = { ...previewContext(ctx), response: ctx.response };
+  for (let i = 0; i < rows.length; i += 1) {
+    const lctx = { ...ctx, line: rows[i] };
+    let request;
+    let url;
+    let body;
+    try {
+      url = resolveString(spec.url, lctx);
+      body = { ...rows[i], ...resolveDeep(spec.set ?? {}, lctx) };
+      request = { method: (spec.method || 'POST').toUpperCase(), url: resolveString(spec.url, { ...pctx, line: rows[i] }), body: { ...rows[i], ...resolveDeep(spec.set ?? {}, { ...pctx, line: rows[i] }) } };
+    } catch (e) {
+      out.push({ index: i, ok: false, message: `Could not build the line: ${e.message}`, request });
+      break;
+    }
+    const res = await httpRequest(
+      'api',
+      { url, method: request.method, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...resolveDeep(ctx.moduleHeaders || {}, ctx), ...auth.headers }, body: JSON.stringify(body) },
+      { retries: 0, timeoutMs: spec.timeoutMs },
+    );
+    if (!res.ok) {
+      const n = normalizeApiError(res.status, res.body);
+      out.push({ index: i, ok: false, status: res.status, message: n.message, details: n.details, response: res.body, request });
+      break;
+    }
+    out.push({ index: i, ok: true, status: res.status, response: res.body, request });
+  }
+  return out;
+}
+
 /** form and mod (its module, may be null) = stored definitions with secrets already decrypted */
 export async function execute(form, rawFormData, mod = null) {
   const started = Date.now();
@@ -191,7 +238,10 @@ export async function execute(form, rawFormData, mod = null) {
 
   try {
     if (!form.api?.url) throw new StageError('config', 'Schema has no api.url');
-    let fd = clean(validateForm(form, rawFormData)) ?? {};
+    // list forms: the filters chosen on screen come apart from the form fields
+    const { $query: listQuery, ...formInput } = rawFormData && typeof rawFormData === 'object' ? rawFormData : {};
+    const odataQuery = form.api.odata ? buildODataQuery(form.api.odata, listQuery ?? {}) : undefined;
+    let fd = clean(validateForm(form, formInput)) ?? {};
     if (form.api.sendEmptyFields && form.api.emptyFields) fd = fillEmpty(fd, form.api.emptyFields);
     fd = resolveDynamicValues(fd);
 
@@ -205,7 +255,11 @@ export async function execute(form, rawFormData, mod = null) {
     timings.authMs = Date.now() - t0;
 
     // 2) build the request
-    let ctx = { env: process.env, kv, vars, form: fd, token: auth.token, moduleHeaders: mod?.headers };
+    // header + lines forms: the header is sent without its lines, each line follows on its own
+    const linesKey = form.api.lines?.field;
+    const lineRows = linesKey && Array.isArray(fd[linesKey]) ? fd[linesKey] : [];
+    const headerData = linesKey ? Object.fromEntries(Object.entries(fd).filter(([k]) => k !== linesKey)) : fd;
+    let ctx = { env: process.env, kv, vars, form: headerData, fullForm: fd, token: auth.token, moduleHeaders: mod?.headers, odataQuery };
     let req = buildRequest(form.api, ctx);
     requestPreview = req.preview;
     const retries = IDEMPOTENT.has(req.method) ? 1 : 0;
@@ -237,7 +291,49 @@ export async function execute(form, rawFormData, mod = null) {
       );
     }
 
+    let lines;
+    if (linesKey && lineRows.length) {
+      lines = await sendLines(form.api.lines, lineRows, { ...ctx, form: fd, response: res.body ?? {} }, auth);
+      requestPreview = { ...requestPreview, lines: lines.map((l) => l.request) };
+      const failed = lines.find((l) => !l.ok);
+      if (failed) {
+        const done = lines.filter((l) => l.ok).length;
+        let header = 'The header was created';
+        if (form.api.successMessage) {
+          try {
+            header = resolveString(form.api.successMessage, { ...previewContext(ctx), env: {}, kv: {}, response: res.body ?? {} }).replace(/\.$/, '');
+          } catch {
+            /* keep default */
+          }
+        }
+        return errorResult(
+          new StageError('api', `${header}, but line ${failed.index + 1} of ${lineRows.length} failed: ${failed.message}`, {
+            status: failed.status,
+            details: [
+              done ? `${done} line${done === 1 ? ' was' : 's were'} created before it.` : 'No line was created.',
+              'Lines after it were not sent. Fix the line and add it, and the ones after it, to the document.',
+              ...(failed.details ?? []),
+            ],
+            raw: failed.response,
+          }),
+          {
+            request: requestPreview,
+            response: { header: res.body, lines: lines.map(({ request: _r, ...l }) => l) },
+            lines: lines.map(({ request: _r, response: _b, ...l }) => l),
+            auth: auth.info,
+            timings,
+            durationMs: Date.now() - started,
+          },
+        );
+      }
+    }
+
     let message = `Success (HTTP ${res.status})`;
+    if (form.api.odata && Array.isArray(res.body?.value)) {
+      const n = res.body.value.length;
+      const total = Number(res.body['@odata.count']);
+      message = `${n} record${n === 1 ? '' : 's'} loaded${Number.isFinite(total) && total > n ? ` (of ${total})` : ''}.`;
+    }
     if (form.api.successMessage) {
       try {
         message = resolveString(form.api.successMessage, { ...previewContext(ctx), env: {}, kv: {}, response: res.body ?? {} });
@@ -251,6 +347,7 @@ export async function execute(form, rawFormData, mod = null) {
       message,
       request: requestPreview,
       response: res.body,
+      ...(lines ? { lines: lines.map(({ request: _r, ...l }) => l) } : {}),
       auth: auth.info,
       timings,
       durationMs: Date.now() - started,
